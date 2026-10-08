@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>接口文档 · 图书馆志愿服务</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/docs.css">
+  <script src="/static/docs.js" defer></script>
+</head>
+<body class="docs-page">
+  <a class="docs-skip" href="#docs-main">跳到接口内容</a>
+  <header class="docs-topbar">
+    <a class="docs-brand" href="/">图书馆志愿服务<span>接口文档</span></a>
+    <div class="docs-top-actions">
+      <button id="docs-theme" class="docs-button docs-button-quiet" type="button">切换外观</button>
+      <span id="session-status" class="docs-session" role="status">未登录</span>
+      <button id="session-action" class="docs-button docs-button-quiet" type="button">登录</button>
+      <a class="docs-button docs-button-primary" href="/">进入工作台</a>
+    </div>
+  </header>
+  <div class="docs-shell">
+    <aside class="docs-sidebar" aria-label="接口分组">
+      <p class="docs-sidebar-label">接口目录</p>
+      <nav id="docs-nav" aria-label="按业务浏览接口"><p class="docs-muted">正在加载目录…</p></nav>
+      <div class="docs-sidebar-note">
+        <strong>连接当前数据库</strong>
+        <p>调用接口会使用真实数据。创建、修改和审批操作需再次确认。</p>
+        <p>日期及时间均按北京时间解释。</p>
+      </div>
+    </aside>
+    <main id="docs-main" class="docs-main" tabindex="-1">
+      <div class="docs-intro">
+        <h1>接口文档</h1>
+        <p>按业务查找接口，查看字段说明，并直接验证操作结果。</p>
+      </div>
+      <details id="docs-auth" class="docs-auth">
+        <summary>登录以调用业务接口</summary>
+        <form id="docs-login-form" class="docs-login-form" novalidate>
+          <div class="docs-field"><label for="login-kind">登录身份</label><select id="login-kind" name="kind"><option value="admin">管理员</option><option value="student">志愿者</option></select></div>
+          <div class="docs-field"><label for="login-account">账号或学号</label><input id="login-account" name="account" autocomplete="username" required maxlength="64" placeholder="请输入账号或学号"></div>
+          <div class="docs-field"><label for="login-password">密码</label><input id="login-password" name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="请输入密码"></div>
+          <button class="docs-button docs-button-primary" type="submit">登录</button>
+        </form>
+        <p id="login-feedback" class="docs-feedback" role="status" aria-live="polite"></p>
+        <p class="docs-muted">登录状态与当前标签页的工作台共用。身份决定可查询的数据和可执行的操作。</p>
+      </details>
+      <div class="docs-search-area">
+        <label for="docs-search">搜索接口</label>
+        <input id="docs-search" type="search" placeholder="输入业务名称或接口路径，例如排班" autocomplete="off">
+        <p id="docs-count" class="docs-muted" role="status" aria-live="polite">正在读取接口定义…</p>
+      </div>
+      <div id="docs-content" aria-live="polite"><div class="docs-loading">正在加载接口文档…</div></div>
+      <noscript><p class="docs-notice">请启用浏览器的脚本功能，以显示接口定义和调用表单。</p></noscript>
+      <footer class="docs-footer">接口权限由服务端校验，页面不会绕过身份或业务限制。</footer>
+    </main>
+  </div>
+</body>
+</html>
