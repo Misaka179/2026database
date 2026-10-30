@@ -153,7 +153,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.check(self.client.post("/schedules", headers=self.headers(), json={
             "student_id": "20260001", "slot_id": self.seed["slot"], "schedule_date": "2030-01-02"
         }), 403)
-        self.assertEqual(len(self.check(self.client.get("/slots", headers=self.headers()))), 2)
+        self.check(self.client.get("/slots", headers=self.headers()), 403)
         self.assertEqual(self.check(self.client.get("/schedules", headers=self.headers())), [])
 
     def test_student_cannot_apply_for_another_students_schedule(self):
@@ -186,7 +186,7 @@ class APIIntegrationTests(unittest.TestCase):
         schedules = self.check(self.client.get("/schedules", headers=self.headers()))
         self.assertEqual([(row["schedule_id"], row["status"]) for row in schedules], [(old_id, "ACTIVE")])
         rules = self.check(self.client.get("/credit-rules", headers=self.headers("super")))
-        self.assertEqual(len(rules), 2)
+        self.assertEqual(len([r for r in rules if r['status']=='ACTIVE']), 2)
         self.assertEqual(next(row for row in rules if row["violation_type"] == "LATE")["deduct_score"], 2)
 
     def test_fixed_transfer_requires_two_stages_and_updates_membership(self):
@@ -222,7 +222,7 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(self.check(self.client.get("/schedules", headers=self.headers("admin1"))), [])
 
     def test_mysql_times_are_human_readable_json_strings(self):
-        slots = self.check(self.client.get("/slots", headers=self.headers()))
+        slots = self.check(self.client.get("/slots", headers=self.headers("super")))
         indexed = {slot["slot_id"]: slot for slot in slots}
         self.assertEqual(indexed[self.seed["slot"]]["start_time"], "10:00")
         self.assertEqual(indexed[self.seed["slot"]]["end_time"], "12:00")
@@ -237,6 +237,51 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertEqual(schedules[0]["schedule_date"], "2030-01-02")
         self.assertEqual(schedules[0]["start_time"], "10:00")
         self.assertEqual(schedules[0]["end_time"], "12:00")
+
+
+    def test_password_reset_permissions_validation_and_private_audit(self):
+        path='/students/20260001/reset-password'
+        body={'new_password':'New-Password-2026!','reason':'本人忘记密码'}
+        self.check(self.client.post(path,json=body),401)
+        self.check(self.client.post(path,json=body,headers=self.headers()),403)
+        self.check(self.client.post(path,json=body,headers=self.headers('admin1')),403)
+        sup=self.headers('super')
+        for invalid in [{**body,'new_password':'short'},{**body,'reason':'   '}]:
+            self.assertGreaterEqual(self.client.post(path,json=invalid,headers=sup).status_code,400)
+        self.check(self.client.post('/students/missing/reset-password',json=body,headers=sup),404)
+        self.check(self.client.post(path,json=body,headers=sup))
+        self.check(self.client.post('/auth/login',json={'kind':'student','account':'20260001','password':'TestPassword123!'}),401)
+        self.check(self.client.post('/auth/login',json={'kind':'student','account':'20260001','password':body['new_password']}))
+        logs=self.check(self.client.get('/operation-logs',headers=sup))
+        reset=[r for r in logs if r['operation_type']=='RESET_PASSWORD']
+        self.assertEqual(len(reset),1)
+        self.assertEqual(reset[0]['reason'],body['reason'])
+        self.assertNotIn(body['new_password'],json.dumps(logs))
+        self.assertNotIn('password_hash',json.dumps(logs))
+
+    def test_password_reset_linked_accounts_and_independent_admin(self):
+        self.service.promote_student(self.seed['super'],'20260001','测试关联身份',[])
+        with self.service.db.transaction() as c:
+            c.execute('SELECT admin_id FROM admin WHERE student_id=%s',('20260001',))
+            linked=c.fetchone()['admin_id']
+        sup=self.headers('super')
+        for path,password in [('/students/20260001/reset-password','Student-New-2026!'),
+                              (f'/admins/{linked}/reset-password','Admin-New-2026!')]:
+            self.check(self.client.post(path,json={'new_password':password,'reason':'核验关联账号'},headers=sup))
+            for kind in ('student','admin'):
+                self.check(self.client.post('/auth/login',json={'kind':kind,'account':'20260001','password':password}))
+        self.check(self.client.post(f"/admins/{self.seed['normal']['id']}/reset-password",
+            json={'new_password':'Independent-2026!','reason':'独立管理员重置'},headers=sup))
+        self.check(self.client.post('/auth/login',json={'kind':'admin','account':'admin1','password':'Independent-2026!'}))
+        self.check(self.client.post('/auth/login',json={'kind':'admin','account':'admin1','password':'TestPassword123!'}),401)
+        self.check(self.client.post('/auth/login',json={'kind':'admin','account':'super','password':'TestPassword123!'}))
+
+    def test_password_reset_audit_failure_rolls_back(self):
+        with patch.object(self.service,'audit',side_effect=RuntimeError('audit unavailable')):
+            with self.assertRaises(RuntimeError):
+                self.service.reset_password(self.seed['super'],'student','20260001','Not-Saved-2026!','审计异常')
+        self.check(self.client.post('/auth/login',json={'kind':'student','account':'20260001','password':'TestPassword123!'}))
+        self.check(self.client.post('/auth/login',json={'kind':'student','account':'20260001','password':'Not-Saved-2026!'}),401)
 
 
 if __name__ == "__main__":

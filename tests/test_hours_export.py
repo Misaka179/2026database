@@ -61,7 +61,7 @@ class ExportDatabaseTests(unittest.TestCase):
         f.now=datetime(2026,9,14,9)
         f.s.run_weekly_settlement()
         initial=load_workbook(BytesIO(export_hours(f.s,f.super,self.term)))
-        total=lambda b:b['分队时长统计'].cell(14,5).value
+        total=lambda b:next(r[-1] for r in b['分队时长统计'].iter_rows(values_only=True) if r[0]=='全队合计')
         self.assertEqual(total(initial),7)
         sid=next(r['schedule_id'] for r in f.s.list_schedules(f.student)
                  if str(r['schedule_date'])=='2026-09-07' and r['slot_id']==f.mon)

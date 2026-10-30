@@ -23,10 +23,13 @@ def migrate(settings, capacity=None):
                 ADD CONSTRAINT fk_transfer_old_slot FOREIGN KEY(old_slot_id) REFERENCES service_slot(slot_id),
                 ADD UNIQUE KEY uq_fixed_transfer_pending(student_id,old_slot_id,active_marker)''')
         # Old slots remain available to historical foreign keys, not new choices.
-        c.execute("UPDATE service_slot SET status='DISABLED' WHERE weekday IS NULL")
+        from .business_schema import installed as multi_installed
+        multi = multi_installed(c)
+        if not multi:
+            c.execute("UPDATE service_slot SET status='DISABLED' WHERE weekday IS NULL")
         for day in range(1,8):
             for period,(start,end) in enumerate(TIMES,1):
-                if not one(c,'SELECT slot_id FROM service_slot WHERE weekday=%s AND period_no=%s',(day,period)):
+                if not one(c,'SELECT slot_id FROM service_slot WHERE weekday=%s AND period_no=%s' + (" AND business_id=(SELECT business_id FROM business WHERE code='CONSULT')" if multi else ''),(day,period)):
                     c.execute('''INSERT INTO service_slot(team_name,weekday,period_no,start_time,end_time,
                         location,need_num,service_minutes,manager_admin_id)
                         VALUES(%s,%s,%s,%s,%s,'图书馆',%s,%s,NULL)''',
@@ -35,7 +38,19 @@ def migrate(settings, capacity=None):
     migrate_semesters(settings)
     from .admin_roles import migrate as migrate_admin_roles
     migrate_admin_roles(settings)
-    return {'fixed_slots':35}
+    from .business_schema import migrate as migrate_business
+    migrate_business(settings)
+    from .collection_schema import migrate as migrate_collections
+    migrate_collections(settings)
+    from .collection_governance_schema import migrate as migrate_collection_governance
+    migrate_collection_governance(settings)
+    from .directory_schema import migrate as migrate_directory
+    migrate_directory(settings)
+    from .hour_units import migrate as migrate_hour_units
+    migrate_hour_units(settings)
+    from .leaders import migrate as migrate_leaders
+    migrate_leaders(settings)
+    return {'fixed_slots':84,'weekly_posts':2}
 
 
 def installed(c):

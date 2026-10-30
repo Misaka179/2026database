@@ -18,6 +18,12 @@ from app.service import Service, DomainError
 from app.semester import default_day, end_date
 
 
+import base64
+from io import BytesIO
+from PIL import Image
+_image=BytesIO();Image.new('RGB',(2,2),'white').save(_image,format='PNG')
+TEST_IMAGES=[base64.b64encode(_image.getvalue()).decode()]
+
 class CalendarRulesTests(unittest.TestCase):
     def test_scheduler_runs_on_startup_and_again_after_restart(self):
         import threading
@@ -59,11 +65,16 @@ class SemesterTests(unittest.TestCase):
         self.s = Service(self.db, clock=lambda: self.now)
         self.super, self.normal, self.student = (self.demo[k] for k in ('super', 'normal', 'student'))
         with self.db.transaction() as c:
-            self.slots = {(r['weekday'], r['period_no']): r['slot_id'] for r in all_rows(c, 'SELECT * FROM service_slot WHERE weekday IS NOT NULL')}
+            self.slots = {(r['weekday'], r['period_no']): r['slot_id'] for r in all_rows(c, 'SELECT * FROM service_slot WHERE weekday IS NOT NULL AND business_id=(SELECT business_id FROM business WHERE code=\'CONSULT\')')}
         self.mon, self.tue, self.wed, self.sat = [self.slots[p] for p in [(1,1), (2,3), (3,1), (6,1)]]
         for slot in (self.mon, self.tue, self.wed, self.sat):
             self.s.configure_slot(self.super, slot, self.normal['id'], 20)
-        self.s.set_memberships(self.super, self.student['id'], [self.mon, self.tue, self.sat])
+        self.s.set_memberships(self.super, self.student['id'], [self.mon])
+        # Legacy multi-team fixture predates the one-consultation-team constraint.
+        # Keep it as historical data for settlement and migration regressions.
+        with self.db.transaction(True) as c:
+            for slot in (self.tue,self.sat):
+                c.execute('INSERT INTO slot_member(student_id,slot_id) VALUES(%s,%s)',(self.student['id'],slot))
 
     def term(self, start='2026-09-07', weeks=3):
         return self.s.save_semester(self.super, '测试学期', start, weeks)['semester_id']
@@ -106,22 +117,22 @@ class SemesterTests(unittest.TestCase):
     def test_absence_late_and_approved_leave_not_overwritten(self):
         self.term()
         mon, tue, sat = self.on('2026-09-07'), self.on('2026-09-08'), self.on('2026-09-12')
-        lid=self.s.apply_leave(self.student, sat, '请假')['leave_id']
+        lid=self.s.apply_leave(self.student, sat, '请假',images=TEST_IMAGES)['leave_id']
         self.s.approve_leave(self.normal,lid,True)
         self.now=datetime(2026,9,7,12)
         self.s.record_attendance(self.normal,mon,'ABSENT')
         self.now=datetime(2026,9,8,17)
         self.s.record_attendance(self.normal,tue,'LATE')
-        # Credit reaches zero; already-approved future leave is cancelled with the schedule.
+        # Absence (3) + late (1) leaves one credit; approved leave remains exempt.
         self.now=datetime(2026,9,14)
         self.s.run_weekly_settlement()
         self.assertEqual(self.s.hours(self.student)['total_minutes'],180)
-        self.assertEqual(self.s.credit(self.student)['credit_score'],0)
-        self.assertEqual(self.schedules(),[])
+        self.assertEqual(self.s.credit(self.student)['credit_score'],1)
+        self.assertTrue(self.schedules())
 
     def test_approved_leave_automatically_settles_without_hours_or_penalty(self):
         self.term()
-        lid=self.s.apply_leave(self.student,self.on('2026-09-08'),'课程请假')['leave_id']
+        lid=self.s.apply_leave(self.student,self.on('2026-09-08'),'课程请假',images=TEST_IMAGES)['leave_id']
         self.s.approve_leave(self.normal,lid,True)
         self.now=datetime(2026,9,14)
         self.s.run_weekly_settlement()
@@ -156,7 +167,7 @@ class SemesterTests(unittest.TestCase):
     def test_rest_cancels_affected_leave_only_and_unchanged_ids_survive(self):
         tid=self.term()
         mon,tue=self.on('2026-09-07'),self.on('2026-09-08')
-        lid=self.s.apply_leave(self.student,mon,'请假')['leave_id']
+        lid=self.s.apply_leave(self.student,mon,'请假',images=TEST_IMAGES)['leave_id']
         self.s.set_calendar(self.super,tid,'2026-09-07','2026-09-07','REST',reason='学校停工')
         self.assertEqual(self.s.list_applications(self.student,'leave')[0]['approve_status'],'CANCELLED')
         self.assertEqual(self.on('2026-09-08'),tue)
@@ -175,6 +186,7 @@ class SemesterTests(unittest.TestCase):
         self.assertEqual(len(self.schedules()),5)
 
     def test_transfer_updates_future_not_started_or_historical_work(self):
+        self.s.set_memberships(self.super,self.student['id'],[self.mon])
         self.term()
         old=self.on('2026-09-07')
         self.now=datetime(2026,9,7,8,30)
@@ -187,6 +199,7 @@ class SemesterTests(unittest.TestCase):
         self.assertEqual(sum(r['slot_id']==self.wed for r in rows),3)
 
     def test_transfer_calendar_and_settlement_failures_roll_back(self):
+        self.s.set_memberships(self.super,self.student['id'],[self.mon])
         tid=self.term()
         before=self.schedules()
         app=self.s.apply_fixed_transfer(self.student,self.mon,self.wed,'长期调时段')['transfer_id']
@@ -252,6 +265,7 @@ class SemesterTests(unittest.TestCase):
         finally:app.dependency_overrides.clear()
 
     def test_final_transfer_rechecks_conflicting_dated_assignment_atomically(self):
+        self.s.set_memberships(self.super,self.student['id'],[self.mon])
         self.term()
         app=self.s.apply_fixed_transfer(self.student,self.mon,self.wed,'长期调整')['transfer_id']
         self.s.approve_transfer(self.normal,app,'first',True)

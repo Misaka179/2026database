@@ -68,6 +68,9 @@ const context = vm.createContext({
 const source = fs.readFileSync(process.argv[1], 'utf8').replace(/\nstart\(\);\s*$/, '\n');
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'roster-ui.js'),'utf8'),context,{filename:'roster-ui.js'});
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'semester-ui.js'),'utf8'),context,{filename:'semester-ui.js'});
+vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'business-ui.js'),'utf8'),context,{filename:'business-ui.js'});
+vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'collection-ui.js'),'utf8'),context,{filename:'collection-ui.js'});
+for(const name of ['submission-ui.js','governance-ui.js','directory-ui.js','batch-ui.js'])vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),name),'utf8'),context,{filename:name});
 vm.runInContext(source,context,{filename:'app.js'});
 const run = code => vm.runInContext(code,context);
 const response = value => ({ok:true,status:200,json:async()=>value});
@@ -107,6 +110,30 @@ class InterfaceAssetTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('node'), 'Node.js is required for browser-script unit scenarios')
 class WorkbenchBehaviorTests(unittest.TestCase):
+    def test_new_claim_does_not_reuse_submission_with_same_numeric_id(self):
+        self.js(r'''
+run(`state.role='STUDENT';state.data.collections=[{collection_id:1,submissions:[{submission_id:3,item_id:9,service_minutes:60}]},{collection_id:3,submissions:[]}];
+globalThis.openedClaim=null;openSubmissionForm=(c,s)=>{openedClaim={collection:c.collection_id,submission:s};};businessAction('claim-create','3');`);
+assert.equal(run('openedClaim.collection'),3);
+assert.equal(run('openedClaim.submission'),null);
+''')
+
+    def test_half_hour_conversion_and_record_edit(self):
+        self.js(r'''
+for(const [input,minutes] of [['0.5',30],['1.0',60],['1.5',90],['24',1440]])assert.equal(run(`halfHourMinutes('${input}')`),minutes);
+for(const input of ['', '0','0.25','1.1','24.5','NaN'])assert.throws(()=>run(`halfHourMinutes('${input}')`));
+run(`state.role='SUPER';state.data.hourRecords=[{record_id:1,service_minutes:90,minute_step:30}];action('hours-edit',1);`);
+assert.match(element('#action-dialog').innerHTML,/认定时长（小时）/);
+assert.match(element('#action-dialog').innerHTML,/step="0.5"/);
+assert.match(element('#action-dialog').innerHTML,/value="1.5"/);
+''')
+
+    def test_submit_buttons_do_not_raise_action_error_toasts(self):
+        self.js(r'''
+assert.equal(run('governanceAction(undefined)'),false);
+assert.doesNotThrow(()=>run('action(undefined)'));
+''')
+
     def test_fixed_membership_appears_and_opens_transfer_without_dated_schedule(self):
         self.js(r'''
 run(`state.role='STUDENT';state.me={student_id:'001',name:'甲',status:'ACTIVE'};
@@ -115,11 +142,14 @@ slots:[{slot_id:3,team_name:'周一-一时段',status:'ACTIVE',weekday:1},{slot_
 schedulesPage();`);
 assert.match(element('#main').innerHTML,/我的固定班次/);
 assert.match(element('#main').innerHTML,/周一-一时段/);
-run("action('transfer')");
-assert.equal(element('#action-dialog').open,true);
-assert.match(element('#action-dialog').innerHTML,/申请更换固定班次/);
-assert.match(element('#action-dialog').innerHTML,/周二-一时段/);
-assert.doesNotMatch(element('#action-dialog').innerHTML,/name="new_date"/);
+context.fetch=async path=>{assert.equal(path,'/my-transfer-options?old_slot_id=3');return response([{slot_id:8,team_name:'周二-一时段',start_time:'08:15',end_time:'09:55'}]);};
+element('#f-old_slot_id').value='3';
+run("openFixedTransfer()").then(()=>{
+ assert.equal(element('#action-dialog').open,true);
+ assert.match(element('#action-dialog').innerHTML,/申请更换固定班次/);
+ assert.match(element('#f-new_slot_id').innerHTML,/周二-一时段/);
+ assert.doesNotMatch(element('#action-dialog').innerHTML,/name="new_date"/);
+}).catch(error=>{console.error(error);process.exitCode=1;});
 run("state.data.transfer=[{old_slot_id:3,first_status:'PENDING',final_status:'PENDING'}];schedulesPage()");
 assert.match(element('#main').innerHTML,/换班审批中/);
 ''')
@@ -423,6 +453,29 @@ run("state.data={admins:[],logs:[{log_id:1,operation_type:'RECORD_ATTENDANCE',ad
 const html=element('#action-dialog').innerHTML;
 assert.match(html,/<dt>变化后信用分<\/dt><dd>0<\/dd>/);
 assert.match(html,/<dt>服务分钟数<\/dt><dd>0<\/dd>/);
+""")
+
+
+    def test_password_reset_dialog_checks_confirmation_and_role(self):
+        self.js(r"""
+run("state.role='SUPER';state.data={students:[{student_id:'001',name:'测试队员',status:'ACTIVE'}],admins:[{admin_id:7,account:'001',name:'测试队员',student_id:'001',role:'NORMAL',status:'ACTIVE'}],slots:[]};");
+assert.match(run('rosterStudentTable(state.data.students)'),/reset-student-password/);
+run("state.tab='admins';basicsPage();");
+assert.match(element('#main').innerHTML,/reset-admin-password/);
+run("action('reset-student-password','001');");
+assert.match(element('#action-dialog').innerHTML,/同步使用新密码/);
+assert.throws(()=>run("modalSubmit({new_password:'NewPassword123!',confirm_password:'different',reason:'忘记密码'})"),/不一致/);
+context.fetch=async(path,opts)=>{
+ assert.equal(path,'/students/001/reset-password');
+ assert.deepEqual(JSON.parse(opts.body),{new_password:'NewPassword123!',reason:'忘记密码'});
+ return response({status:'UPDATED'});
+};
+run("modalSubmit({new_password:'NewPassword123!',confirm_password:'NewPassword123!',reason:'忘记密码'})").then(()=>{
+ run("closeDialog();state.role='NORMAL';");
+ assert.doesNotMatch(run('rosterStudentTable(state.data.students)'),/reset-student-password/);
+ run("action('reset-admin-password',7);");
+ assert.equal(element('#action-dialog').open,false);
+}).catch(error=>{console.error(error);process.exitCode=1;});
 """)
 
 

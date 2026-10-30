@@ -78,12 +78,13 @@ class CorrectionService:
         reason = reason_text(reason)
         require(status in ('NORMAL','LATE','ABSENT','LEAVE'), '考勤状态无效', 422)
         with self.db.transaction(True) as c:
-            a = self.actor(c, actor, ('NORMAL','SUPER'))
+            a = self.actor(c, actor, ('NORMAL','SUPER','LEAD'))
             row = self.schedule(c, schedule_id)
             self.scope(a, row)
+            self.attendance_kind_guard(row,status)
             existing = one(c, 'SELECT * FROM attendance WHERE schedule_id=%s FOR UPDATE', (schedule_id,))
             require(existing, '请先登记考勤，再进行改判', 404)
-            require(row['status']=='COMPLETED' and instant(row['schedule_date'],row['end_time'])<=self.clock(),
+            require(row['status']=='COMPLETED' and (row.get('schedule_kind')=='WEEKLY' or instant(row['schedule_date'],row['end_time'])<=self.clock()),
                     '只能改判已经结束并结算的服务')
             if existing['attendance_status'] == status:
                 return {'attendance_id': existing['attendance_id'], 'status': status, 'replayed': True}
@@ -110,6 +111,10 @@ class CorrectionService:
                 c.execute("UPDATE violation SET status='REVOKED' WHERE violation_id=%s", (violation['violation_id'],))
             if status in ('LATE','ABSENT'):
                 score = self._penalize(c, row['student_id'], aid, status, a['_id'], score)
+            # Fixed-slot manual increases do not survive attendance reclassification.
+            if row.get('schedule_kind') == 'FIXED':
+                row['service_minutes'] = self.slot(c, row['slot_id'])['service_minutes']
+                c.execute('UPDATE schedule SET recognition_minutes=NULL WHERE schedule_id=%s', (schedule_id,))
             awarded = row['service_minutes'] if status in ('NORMAL','LATE') else 0
             record = one(c, 'SELECT * FROM service_record WHERE attendance_id=%s', (aid,))
             if record:

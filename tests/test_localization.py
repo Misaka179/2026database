@@ -199,7 +199,8 @@ class ChineseInterfaceTests(unittest.TestCase):
         for role, actor_id, expected in cases:
             with self.subTest(role=role, actor_id=actor_id), patch.object(
                     service, 'actor', return_value={'_role': role, '_id': actor_id}):
-                rows = service.list_schedules({})
+                with patch('app.business.installed',return_value=False):
+                    rows = service.list_schedules({})
                 self.assertEqual([row['schedule_id'] for row in rows], expected)
                 for row in rows:
                     self.assertEqual(row['student_name'], {'s1': '张三', 's2': '李四'}[row['student_id']])

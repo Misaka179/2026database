@@ -16,7 +16,7 @@ def provision(service, actor, accounts):
     prepared = [(item, hash_password(item['password'])) for item in accounts]
     with service.db.transaction(True) as c:
         admin = service.actor(c, actor, ('SUPER',))
-        slots = all_rows(c, "SELECT * FROM service_slot WHERE weekday IS NOT NULL AND status='ACTIVE' ORDER BY weekday,period_no")
+        slots = all_rows(c, "SELECT * FROM service_slot WHERE business_id=(SELECT business_id FROM business WHERE code='CONSULT') AND weekday IS NOT NULL AND status='ACTIVE' ORDER BY weekday,period_no")
         require(len(slots)==35, '必须先完成 35 个固定时段初始化')
         expected = {s['slot_id']:s for s in slots}
         require(len(accounts)==35 and {a['slot_id'] for a in accounts}==set(expected), '测试账号清单与固定时段不匹配')
@@ -60,7 +60,7 @@ def main():
     with service.db.transaction() as c:
         admin=one(c,"SELECT admin_id FROM admin WHERE account=%s AND role='SUPER' AND status='ACTIVE'",(args.super_account,))
         require(admin,'请指定有效超级管理员账号')
-        slots=all_rows(c,"SELECT slot_id,team_name,weekday,period_no FROM service_slot WHERE weekday IS NOT NULL AND status='ACTIVE' ORDER BY weekday,period_no")
+        slots=all_rows(c,"SELECT slot_id,team_name,weekday,period_no FROM service_slot WHERE business_id=(SELECT business_id FROM business WHERE code='CONSULT') AND weekday IS NOT NULL AND status='ACTIVE' ORDER BY weekday,period_no")
     if args.output.exists():
         manifest=json.loads(args.output.read_text(encoding='utf-8'))
         require(manifest['database']==service.db.settings['database'],'清单数据库不匹配')

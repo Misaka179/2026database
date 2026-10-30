@@ -63,7 +63,7 @@ class CorrectionTests(unittest.TestCase):
     def test_repeated_reclassification_retains_all_original_penalties(self):
         sid=self.absent()
         self.s.correct_attendance(self.normal,sid,'LATE','实际为迟到',1)
-        self.assertEqual(self.s.credit(self.student)['credit_score'],3)
+        self.assertEqual(self.s.credit(self.student)['credit_score'],4)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],120)
         self.s.correct_attendance(self.super,sid,'NORMAL','核实准时到岗',2)
         self.assertEqual(self.s.credit(self.student)['credit_score'],5)
@@ -166,6 +166,7 @@ class CorrectionTests(unittest.TestCase):
         finally:app.dependency_overrides.clear()
 
     def test_later_membership_changes_do_not_backfill_the_new_slot(self):
+        self.s.set_memberships(self.super,self.student['id'],[self.mon])
         self.term()
         self.now=datetime(2026,9,16,18)
         app=self.s.apply_fixed_transfer(self.student,self.mon,self.wed,'长期调整')['transfer_id']

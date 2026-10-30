@@ -62,7 +62,7 @@ def initialize_database(settings, database='volunteer_core', demo=True, reset=Fa
             for filename in ('schema.sql','constraints.sql'):
                 for stmt in statements((CORE/'sql'/filename).read_text(encoding='utf-8')):
                     c.execute(stmt)
-        elif len(tables) not in (13,14,15,16,17):
+        elif not {'student','admin','service_slot','schedule','attendance','service_record','credit_log','operation_log'}.issubset({next(iter(t.values())) for t in tables}):
             raise RuntimeError('Existing schema is incomplete; refusing to overwrite it')
         trigger_count=one(c,'SELECT COUNT(*) AS n FROM information_schema.triggers WHERE trigger_schema=%s',(database,))['n']
         if trigger_count != 12:
@@ -109,4 +109,4 @@ if __name__=='__main__':
     result=initialize_database(json.loads(args.config.read_text(encoding='utf-8')))
     from .fixed_slots import migrate
     migrate({**json.loads(args.config.read_text(encoding='utf-8')),'database':'volunteer_core'})
-    print('数据库已升级，保留现有数据。' if result.get('already_initialized') else '17 张表、35 个固定时段及演示账户已初始化。账户信息保存在 .work/demo-accounts.json。')
+    print('数据库已升级，保留现有数据。' if result.get('already_initialized') else '多业务数据表、84 个固定时段、花园 A/B 岗及演示账户已初始化。账户信息保存在 .work/demo-accounts.json。')

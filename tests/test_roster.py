@@ -72,9 +72,9 @@ class FixedRosterTests(unittest.TestCase):
     def test_catalogue_is_idempotent_and_preserves_old_slots(self):
         migrate(self.settings)
         rows=self.s.list_slots(self.super)
-        current=[r for r in rows if r['weekday'] is not None]
+        current=[r for r in rows if r['weekday'] is not None and r['business_code']=='CONSULT']
         self.assertEqual(len(current),35)
-        self.assertEqual(len([r for r in rows if r['weekday'] is None]),2)
+        self.assertEqual(len([r for r in rows if r['schedule_kind']=='LEGACY']),2)
         for r in current:
             self.assertEqual(r['team_name'][0],'周')
             self.assertEqual(str(r['start_time']),TIMES[r['period_no']-1][0].lstrip('0')+':00')

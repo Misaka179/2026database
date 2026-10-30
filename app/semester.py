@@ -219,7 +219,7 @@ class SemesterService:
 
     def snapshot_memberships(self, c):
         if installed(c):
-            for term in all_rows(c,'SELECT * FROM semester WHERE end_date>=%s',(self.clock().date(),)):
+            for term in all_rows(c,'SELECT * FROM semester WHERE end_date>=%s',(getattr(self,'_membership_effective',self.clock()).date(),)):
                 self._snapshot_members(c,term)
 
     def _sync_semester(self, c, semester_id):

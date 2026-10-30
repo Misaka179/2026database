@@ -120,7 +120,7 @@ class AdministratorTests(unittest.TestCase):
             self.assertEqual(client.get('/auth/me',headers=headers(self.student['id'])).json()['role'],'NORMAL')
 
     def test_test_accounts_are_scoped_idempotent_and_preserve_existing_managers(self):
-        slots=self.rows('SELECT slot_id,weekday,period_no FROM service_slot WHERE weekday IS NOT NULL')
+        slots=self.rows('SELECT slot_id,weekday,period_no FROM service_slot WHERE weekday IS NOT NULL AND business_id=(SELECT business_id FROM business WHERE code=\'CONSULT\')')
         accounts=[{**s,'account':f"test_w{s['weekday']}_p{s['period_no']}",'password':'TestPassword123!'} for s in slots]
         r=provision(self.s,self.super,accounts)
         self.assertEqual(r,{'created':35,'assigned':31,'preserved':4})

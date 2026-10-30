@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if sys.version_info < (3, 10):
             raise StartupError('请使用 Python 3.10 或更新版本运行本系统。')
-        missing = [name for name in ('fastapi', 'uvicorn', 'cryptography')
+        missing = [name for name in ('fastapi', 'uvicorn', 'cryptography', 'openpyxl', 'PIL')
                    if importlib.util.find_spec(name) is None]
         if missing:
             raise StartupError('当前 Python 缺少运行依赖，请在 core 目录执行：'
