@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>设计预览 · 移动端对照 · 图书馆志愿服务</title>
+<link rel="stylesheet" href="preview.css">
+<style>
+  /* 仅预览目录页使用，不属于产品组件 */
+  .phone-board {
+    min-height: 100dvh;
+    padding: 32px 20px 60px;
+    background: var(--bg-sunken);
+  }
+  .board-head {
+    max-width: 1360px;
+    margin: 0 auto 26px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 20px;
+  }
+  .board-head h1 {
+    font-size: 1.5rem;
+  }
+  .board-head p {
+    margin-top: 8px;
+    max-width: 70ch;
+    color: var(--text-2);
+    font-size: var(--fs-12);
+    line-height: 1.9;
+  }
+  .phones {
+    max-width: 1360px;
+    margin: 0 auto;
+    display: flex;
+    gap: 22px;
+    align-items: flex-start;
+    overflow-x: auto;
+    padding-bottom: 14px;
+  }
+  .phone {
+    flex: none;
+    width: 390px;
+  }
+  .phone-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: var(--fs-12);
+    color: var(--text-muted);
+  }
+  .phone-label strong {
+    color: var(--text);
+    font-size: var(--fs-13);
+    font-weight: 600;
+  }
+  .phone-label a {
+    font-size: var(--fs-11);
+  }
+  .phone-frame {
+    width: 390px;
+    height: 844px;
+    border: 1px solid var(--border-strong);
+    border-radius: 22px;
+    background: var(--surface);
+    box-shadow: var(--shadow-3);
+    overflow: hidden;
+  }
+  .phone-frame iframe {
+    width: 390px;
+    height: 844px;
+    border: 0;
+    display: block;
+  }
+  .board-note {
+    max-width: 1360px;
+    margin: 18px auto 0;
+    font-size: var(--fs-12);
+    color: var(--text-muted);
+    line-height: 1.9;
+  }
+  @media (max-width: 900px) {
+    .phones {
+      flex-direction: column;
+      align-items: center;
+      overflow-x: visible;
+    }
+    .board-head {
+      flex-direction: column;
+    }
+  }
+</style>
+<script>
+  try {
+    var mode = localStorage.getItem('preview-theme') || 'system';
+    var dark = mode === 'dark' ||
+      (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  } catch (error) { /* 忽略 */ }
+</script>
+<script src="preview.js" defer></script>
+</head>
+<body>
+<main class="phone-board" id="main">
+  <div class="board-head">
+    <div>
+      <h1>移动端对照 · 390 × 844</h1>
+      <p>
+        志愿者主要在手机上查看排班与时长。这里同屏对比登录、概览与列表三个关键页在手机视口下的形态：
+        侧栏收为抽屉、工具栏纵向排列、宽表格变成「标签 + 值」卡片、操作按钮保持 44px 触摸区。
+      </p>
+    </div>
+    <button class="theme-button" type="button" data-theme-toggle>
+      <svg class="i" aria-hidden="true"><use href="#i-moon"></use></svg>
+      <span>外观：跟随系统</span>
+    </button>
+  </div>
+
+  <div class="phones">
+    <div class="phone">
+      <div class="phone-label">
+        <strong>① 登录页</strong>
+        <a href="login.html" target="_blank" rel="noopener">单独打开 ↗</a>
+      </div>
+      <div class="phone-frame">
+        <iframe src="login.html" title="登录页移动端预览" loading="lazy"></iframe>
+      </div>
+    </div>
+
+    <div class="phone">
+      <div class="phone-label">
+        <strong>② 工作概览</strong>
+        <a href="overview.html" target="_blank" rel="noopener">单独打开 ↗</a>
+      </div>
+      <div class="phone-frame">
+        <iframe src="overview.html" title="工作概览移动端预览" loading="lazy"></iframe>
+      </div>
+    </div>
+
+    <div class="phone">
+      <div class="phone-label">
+        <strong>③ 排班与考勤（表格卡片化）</strong>
+        <a href="schedules.html" target="_blank" rel="noopener">单独打开 ↗</a>
+      </div>
+      <div class="phone-frame">
+        <iframe src="schedules.html" title="排班与考勤移动端预览" loading="lazy"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <p class="board-note">
+    提示：部分浏览器会限制本地 file:// 页面嵌套 iframe。若此处为空白，请直接打开各页面并把窗口缩窄到 390px 左右查看；
+    点击页面顶部「菜单」按钮可展开侧栏抽屉。主题跟随各页面自身的切换按钮。
+  </p>
+</main>
+</body>
+</html>

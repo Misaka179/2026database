@@ -149,3 +149,115 @@ MySQL 8.x 未在本机运行验证。此次包含本机业务页面与接口的�
 实测本机 8765 与 3308 在没有服务运行时，约 2.03 秒后返回 WinError 10061；原 0.5 秒探测会先超时，误报网络问题。启动器改为等待 3 秒，并在超时后用 Windows 独占绑定确认空闲，不忽略端口占用或访问被拒绝。权限异常保留原始错误信息。
 
 启动器回归测试 5 项通过，覆盖拒绝连接、慢拒绝、超时且占用、权限拒绝、现有本系统与其他服务识别。通过实际 `python core/start.py` 完成数据库启动、保留数据迁移及网页启动；GET /health 返回 200 / ok，GET / 返回 200，再次 existing_application() 返回 True。只运行针对启动器的测试，未重建正式数据库。
+
+## 2026-11-07 可移植性改造验收
+
+目标：任意一台装好指定环境（Python 3.10+ 且 `requirements.txt` 依赖齐全、MySQL 5.7.44 或 8.x 二进制）的计算机，复制项目后可直接启动，不依赖本机专属路径。
+
+### 改动要点
+
+- 新增 `app/paths.py` 作为路径唯一来源，默认仍是项目上级 `.work`（兼容已有数据），支持 `VOLUNTEER_HOME`。
+- 启动器自动选择解释器：当前解释器版本过低或缺依赖时，自动定位 `2026database/.conda/envs/volunteer-core`、`.venv` 等并以之重新执行自身；`VOLUNTEER_PYTHON` 可强制指定。`start.cmd` / `start.ps1` 同顺序兜底。
+- MySQL 二进制自动发现；`server.json` 缓存的 bin 路径换机器失效时，仅在**同一版本族**内自动重定位，版本族不符则拒绝启动以保护数据目录。
+- 端口可配置：API `8765`（`VOLUNTEER_PORT` / `--port`）、私用 MySQL `3308`（`VOLUNTEER_DB_PORT` / `--port`），冲突报错给出改端口方法。
+- 外部数据库部署：`VOLUNTEER_DB_CONFIG` / `VOLUNTEER_ADMIN_CONFIG`；无本地 `server.json` 时升级前备份改用 PATH 的 `mysqldump`，找不到则明确警告并跳过。
+- JSON / SQL 配置读取兼容 UTF-8 BOM（Windows 记事本、PowerShell 5.1 常见），避免"配置文件看起来正常但启动报 JSONDecodeError"。
+- `.gitattributes` 固定 `*.cmd` / `*.bat` / `*.ps1` 检出为 CRLF（cmd.exe 无法正确解析含分支与中文的 LF-only 批处理）。
+
+### 实测环境与结果
+
+- 环境：Windows 11、Python 3.12.16（项目自带 conda 环境）、MySQL 8.0.46、Node.js v24.18.0。
+- 用 PATH 中缺 `fastapi` 的 Python 3.11.9 执行 `start.py`：输出"已自动切换到项目自带环境"，随后 MySQL、`app.bootstrap`、uvicorn 依次启动，`GET /health` 200、`GET /` 200 且含"管理工作台"；`.work/demo-accounts.json` 生成（不打印密码）。
+- 20 项可移植性检查全部通过：`test_startup.py` 5/5、`test_api.py` 全部、端口冲突与 `--port 8877`、bin 路径失效同族重定位与异族拒绝、外部库备份两条路径、`start.cmd` / `start.ps1` / `VOLUNTEER_PYTHON`。
+- 验证脚本：`.work/tmp/verify_portability.ps1`，日志 `.work/tmp/verify-20261107-022819.log`。
+
+### 范围说明
+
+本机实测为 MySQL 8.0.46；MySQL 5.7.44 下的行为沿用原有实现与既有验证（未在本轮重新实测 5.7）。
+
+### 完整回归
+
+执行 `python -m unittest discover -s tests -v`（项目自带 Python 3.12.16）：**224 项全部通过，耗时 805.753 秒**，日志 `.work/tmp/full-tests-run2-20261107.log`。
+
+本轮还修正了 2.4.0 提交遗留的三处测试与代码不一致（均不改业务规则）：
+
+1. `tests/test_ui_contract.py`：Node 桩未加载 `leader-ui.js`，而 `app.js` 的 `action()` 会调用 `leaderAction`，导致 13 项界面契约测试报 `ReferenceError`；补载该脚本后 27 项全部通过。
+2. `tests/test_core.py`：固定换班终审用例用跨分队归属构造前置数据，与 2.4.0「咨询服务队员只能属于一个分队」规则冲突；改为跳过归属校验构造历史跨队名单，仍验证终审复核逻辑。
+3. `tests/test_roster.py`：导入用例给同一队员同时导入两个分队，与同一规则冲突；改为同一分队的两个时段（仍为 2 条归属），验证幂等导入不变。
+
+## 2026-11-07 工作台业务页面 v2.5 版式落地
+
+上一轮 v2.5 只完成设计令牌、外壳、登录与密码页；本轮把登录/密码之外的业务页面统一到设计规范，未改动后端接口与业务逻辑。
+
+- 新增 `web/pages-v25.css`：页头操作组、概览（欢迎区/指标卡图标与强调色/双栏/常用操作）、工具栏与查询表单、业务与小组筛选、表格（44px 行高/吸顶表头/行悬停/次级信息）、汇总条、征集与导入弹窗内部布局、空态与加载、对话框尺寸，以及 1240/1100/860/767/480 响应式。
+- `web/app.js`：`heading()` 增加 `.page-actions`；概览指标卡增加图标与强调色；侧栏遮罩与 `menu-close`；浏览器端为 ≥4 列宽表补 `data-label`（`MutationObserver`），使 ≤767px 表格变为「标签 + 值」卡片；Esc 关闭移动端抽屉。Node 测试桩无 `MutationObserver` 时自动跳过，契约测试不受影响。
+- `web/index.html`：加载 `pages-v25.css`，静态资源版本升到 `2.5.1`。`web/directory-ui.js`：小组筛选增加 `.group-filter` 钩子。
+- 侧栏导航：置顶入口（工作概览 / 收件箱）与分组之间增加分隔线；「工作概览 / 收件箱」与「业务与人员、排班与考勤、时长与信用、申请与审批、系统管理」统一为绿色矩形底色（`--accent-soft` 底 + `--accent-text` 字），当前页改为实心主色绿底 + 浅色文字以便区分；分组展开后的下拉选项改为整行宽度，选中项与当前页一致为实心深绿。悬停轻微加深，仍由 `pages-v25.css` 实现。
+
+验证：
+
+- `tests/test_ui_contract.py` 27 项全部通过（登录页、主题、DOM 与文案契约未破坏）。
+- 浏览器逐页核对（截图在 `.work/audit/app-shots/`）：超级管理员 15 页、普通管理员 4 页、志愿者 6 页、浅色/深色、390×844 移动端与弹窗；控制台无脚本错误。
+- 完整回归：`python -m unittest discover -s tests -v` **232 项全部通过，886.715 秒**，日志 `.work/tmp/full-tests-v25-pages.log`。
+
+### 2026-11-07 改密成功弹窗与登录衔接
+
+反馈：修改密码后，用新密码登录提示密码错误。排查与处理：
+
+- **接口与改密流程本身正常**：用真实浏览器提交 `/password#change` 表单后，新密码可登录（200），旧密码返回 401；`tests/test_auth_password.py` 8 项全部通过。此前失败的可复现原因是改密成功后页面 1.6 秒自动跳回登录页，浏览器把**旧密码自动填充**进登录框，或登录身份/账号选错，于是显示"账号或密码错误"。
+- **改密成功弹窗**：`web/password.html` 新增原生 `<dialog id="password-dialog">`，成功后显示"密码修改成功"、登录身份、登录账号与提示；按钮「去登录」「留在本页」。`web/password.js` 提交前调用 `/auth/me` 记录身份与账号，成功后清空旧令牌并弹出该弹窗，不再静默跳转；同时补上提交异常的兜底提示（如"当前密码不正确"现在会显示在表单内）。
+- **登录页衔接**：`web/app.js` 的 `loginView()` 读取一次性 `password_changed` 提示，自动选中登录身份、预填账号、显示"密码已更新，请使用新密码登录（身份 · 账号）"，并把密码框 `autocomplete` 改为 `new-password`，避免浏览器自动填充旧密码，同时聚焦密码框。
+- 验证：真实浏览器完成 改密 → 弹窗 → 去登录 → 登录页提示/预填 → 新密码登录 200 → 改回原密码；`test_ui_contract.py` 27 项、`test_auth_password.py` 8 项全部通过。
+
+
+## 2026-11-07 前端 v2.5 与密码管理验收
+
+### 范围
+
+完成正式前端视觉升级（登录页、外壳、组件、主题三态），新增找回/修改密码页面与接口，未改数据库表结构。
+
+- 前端：`web/app-v25.css`（新增，加载在 `app.css` 之后）、`web/app.js`（登录页重写、外壳、主题三态、图标）、`web/index.html`（图标 sprite 与首屏主题脚本）、`web/docs.html` / `docs.js`、`web/directory-ui.js`、新增 `web/password.html` / `password.js`。
+- 后端：`GET /password` 页面路由；`POST /auth/password/change`、`POST /auth/password/reset-request`；`app/localization.py` 补充中文接口说明。
+- 设计依据与实施记录：[前端设计规范 2.5.0](前端设计规范_2.5.0.md) §15。
+
+### 自动化测试
+
+| 检查 | 结果 |
+|---|---|
+| `tests/test_ui_contract.py`（27 项前端契约） | 全部通过（登录页、主题、DOM 契约未破坏） |
+| `tests/test_auth_password.py`（8 项密码管理） | 全部通过 |
+| 完整回归 `python -m unittest discover -s tests -v` | **232 项全部通过，耗时 776.452 秒**，日志 `.work/tmp/full-tests-v25-20261107.log` |
+
+前端脚本均通过 `node --check`；`web/password.html` 由 `GET /password` 返回 `200 text/html`。
+
+### 实际页面与接口冒烟
+
+| 检查 | 结果 |
+|---|---|
+| `GET /`、`GET /password`、`GET /docs` | 均为 200（`text/html`），本地静态资源加载正常 |
+| `POST /auth/login`（演示超级管理员） | 200，令牌长度 121；`GET /auth/me` 返回角色 SUPER |
+| `POST /auth/password/change`（错误当前密码） | 401「当前密码不正确」，未修改任何密码 |
+| `POST /auth/password/reset-request`（正确学号+姓名） | 200 `{"status":"ACCEPTED"}`，超级管理员收件箱新增申请通知 |
+| 无头浏览器截图 | 登录页（1440/1366）、密码页、接口文档、登录后工作台概览，见 `.work/tmp/screens-v25/` |
+
+### 已知限制（已写入 README 第一版边界）
+
+- 修改密码后未立即吊销旧令牌（未改表结构），旧令牌最长仍有效 1 小时。
+- 学生自助改密不写 `operation_log`（`admin_id` 非空外键），改为给超级管理员发收件箱通知留痕。
+- 忘记密码采用「提交申请 → 管理员核实后重置」，不提供邮件/短信验证码。
+
+### 启动器窗口行为修复（2026-11-07）
+
+现象：双击 `start.cmd` 执行到「【2/3】检查数据表及演示账号」后终端窗口自动关闭。
+
+原因：主机上遗留了一个仍在运行的 API 实例占用 8765。`start.py` 检测到「系统已经运行」后按成功返回 0，而 `start.cmd` 只在退出码非 0 时暂停，因此窗口直接关闭，用户误以为启动失败。
+
+修复：
+
+- `start.py` 在第一次探测到系统已运行时立即打印工作台、接口文档与密码管理地址，并（仅在交互式终端）等待按回车关闭，避免窗口一闪而过；
+- 成功启动时也补充打印 `http://127.0.0.1:8765/password`；
+- 非交互调用（脚本、测试）不会等待。
+
+实测：冷启动依次输出 1/3、2/3、3/3，`GET /health` 返回 200；API 正在运行时再次执行 `start.cmd`，输出「本系统已经运行，无需重复启动」并等待回车；测试结束停止 API、保留私有 MySQL。
+
+

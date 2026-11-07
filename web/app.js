@@ -20,7 +20,7 @@ const nav = [
   ['semesters','学期与日历',['SUPER','NORMAL','STUDENT']],['applications','申请与审批',['SUPER','NORMAL','STUDENT']],['hours','服务时长',['SUPER','STUDENT']],
   ['credit','信用管理',['SUPER','STUDENT']],['basics','基础资料',['SUPER']],['slots','服务班次',['NORMAL']],['logs','操作日志',['SUPER']],['members','本时段队员',['NORMAL']]
 ];
-const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">□</div><h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
+const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">${uiIcon('inbox')}</div><h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
 const badge = (value, override) => `<span class="badge ${['ACTIVE','APPROVED','NORMAL','VALID'].includes(value)?'good':['REJECTED','DISABLED','ABSENT','LATE'].includes(value)?'warning':['PENDING','FIRST_APPROVED'].includes(value)?'pending':''}">${esc(override || label[value] || value || '未登记')}</span>`;
 const fmtDate = value => value ? String(value).replace('T',' ').slice(0,16) : '未记录';
 const hourText = value => `${Number((Number(value || 0)/60).toFixed(2))} 小时`;
@@ -33,9 +33,6 @@ function table(headers, rows, blank='暂无记录', text='记录生成后会显�
 function tabs(items,current){return `<div class="tabs" role="tablist" aria-label="内容分类">${items.map(([v,t])=>`<button class="tab ${current===v?'active':''}" role="tab" aria-selected="${current===v}" data-tab="${v}">${t}</button>`).join('')}</div>`;}
 function notify(text,error=false){const n=document.createElement('div');n.className='toast'+(error?' error':'');n.textContent=text;$('#notifications').append(n);setTimeout(()=>n.remove(),5000);}
 function setTheme(theme){if(theme)document.documentElement.dataset.theme=theme;else delete document.documentElement.dataset.theme;}
-setTheme(localStorage.getItem('volunteer_theme'));
-function toggleTheme(){const dark=document.documentElement.dataset.theme==='dark'||(!document.documentElement.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches);const theme=dark?'light':'dark';setTheme(theme);localStorage.setItem('volunteer_theme',theme);document.querySelectorAll('[data-action="theme"]').forEach(b=>b.textContent=dark?'深色外观':'浅色外观');}
-function themeText(){return (document.documentElement.dataset.theme==='dark'||(!document.documentElement.dataset.theme&&matchMedia('(prefers-color-scheme:dark)').matches))?'浅色外观':'深色外观';}
 async function request(path,options={}) {
   const token=state.token;const sessionVersion=state.sessionVersion;
   const headers = {'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})};
@@ -54,19 +51,7 @@ async function request(path,options={}) {
   return data;
 }
 const send=(path,body,method='POST')=>request(path,{method,body:JSON.stringify(body)});
-function loginView(){
-  document.title='登录 · 图书馆志愿服务';
-  state.me=null;state.role=null;
-  app.innerHTML=`<main class="login-page" id="main"><section class="login-story"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">图</span><span><strong>图书馆志愿服务</strong><small>志愿队管理工作台</small></span></a><div class="login-story-main"><div class="eyebrow">服务有记录，协作更清楚</div><h1>把每一次志愿服务<br>安排妥当。</h1><p>从排班与申请，到考勤、服务时长和信用记录，在同一处完成日常管理。</p><div class="story-list"><div class="story-row"><strong>排班与考勤</strong><span>查看服务安排，记录实际出勤</span></div><div class="story-row"><strong>申请与审批</strong><span>请假、换班和退队，进度清晰可查</span></div><div class="story-row"><strong>时长与信用</strong><span>逐笔记录，保留每次变更的依据</span></div></div></div><div class="login-footer">四川大学图书馆志愿服务队</div></section><section class="login-side"><button class="theme-button" data-action="theme">${themeText()}</button><div class="login-form-wrap"><h2>欢迎回来</h2><p>使用你的账号登录工作台。</p><form id="login-form" class="form-stack" novalidate><div class="field"><label for="login-kind">登录身份</label><select id="login-kind" name="kind"><option value="admin">管理员</option><option value="student">志愿者</option></select></div><div class="field"><label for="login-account">账号</label><input id="login-account" name="account" autocomplete="username" placeholder="请输入管理员账号或学号" required maxlength="64"></div><div class="field"><label for="login-password">密码</label><div class="password-wrap"><input id="login-password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required maxlength="128"><button type="button" class="btn" data-action="password" aria-label="显示密码">显示</button></div></div><div id="login-error" class="notice error" role="alert" hidden></div><button class="btn primary wide" type="submit">登录工作台</button></form><p class="login-help">不同角色登录后会看到对应的工作范围。<br>首次使用请向项目管理员获取账号和密码。</p><a class="text-button" href="/docs">查看中文接口说明 →</a></div></section></main>`;
-}
 function signOut(show=true){state.inboxSelected=new Set();state.collectionSelections=new Map();state.token=null;sessionStorage.removeItem('volunteer_token');state.data={};state.loading=false;state.refreshError='';state.sequence++;state.refreshSequence++;state.sessionVersion++;state.selectedStudent='';state.studentQuery='';state.from='';state.to='';closeDialog(true);loginView();if(show)notify('已退出登录。');}
-function buildShell(){
- const available=nav.filter(n=>n[2].includes(state.role));
- if(!available.some(n=>n[0]===state.page))state.page='overview';
- app.innerHTML=`<div class="workspace"><aside class="sidebar" aria-label="主导航"><a href="/" class="brand"><span class="brand-mark" aria-hidden="true">图</span><span><strong>图书馆志愿服务</strong><small>管理工作台</small></span></a><div class="nav-label">日常工作</div><nav class="nav-list">${navigationHtml(available)}</nav><div class="sidebar-bottom"><a href="/docs">中文接口说明 ↗</a><div class="profile"><span class="avatar" aria-hidden="true">${esc(state.me.name.slice(-2))}</span><span><strong>${esc(state.me.name)}</strong><small>${roleName(state.role)}</small></span></div><button class="text-button" style="text-align:left" data-action="logout">退出登录</button></div></aside><div class="workspace-body"><header class="topbar"><div class="button-row"><button class="btn small mobile-menu" data-action="menu" aria-label="打开或关闭导航菜单">菜单</button><div class="breadcrumb"><span>管理工作台</span><span>/</span><strong id="breadcrumb-title">工作概览</strong></div></div><div class="topbar-actions"><span class="connection" id="connection">正在连接</span><button class="theme-button" data-action="theme">${themeText()}</button></div></header><main class="main-content" id="main" tabindex="-1"></main></div></div>`;
- startInboxPolling();
- request('/health').then(()=>{if($('#connection'))$('#connection').textContent='服务连接正常';}).catch(()=>{if($('#connection')){$('#connection').textContent='服务连接中断';$('#connection').classList.add('failed');}});
-}
 async function loadData(role=state.role){
  if(role==='LEAD'){const [d,inbox]=await Promise.all([request('/leader-workspace'),request('/inbox?limit=1')]);return {...d,inbox,leave:[],transfer:[],businesses:[],groups:[]};}
  const data={};
@@ -96,7 +81,7 @@ async function refresh(){
  }catch(e){if(!current())return;state.loading=false;state.refreshError=e.message;renderPage();}
 }
 function navigate(page){if(state.role==='LEAD'&&!['overview','inbox','lead-workspace'].includes(page)){state.leadTab=page==='hours'?'hours':page==='applications'?'withdrawal':'schedules';page='lead-workspace';}if(state.page!==page){state.inboxSelected=new Set();state.collectionSelections=new Map();}state.page=page;state.tab='';state.search='';state.status='';state.sequence++;document.querySelector('.workspace')?.classList.remove('menu-open');updateNavigation();renderPage();}
-function heading(title,text,button=''){return `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div>${button}</div>`;}
+function heading(title,text,button=''){return `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div>${button?`<div class="page-actions">${button}</div>`:''}</div>`;}
 function canFuture(r){return r.status==='ACTIVE'&&new Date(`${r.schedule_date}T${r.start_time}:00+08:00`)>new Date();}
 function isEnded(r){if(r.schedule_kind==='WEEKLY'){const day=new Date(`${r.schedule_date}T00:00:00+08:00`);day.setUTCDate(day.getUTCDate()-6);return day<=new Date();}return new Date(`${r.schedule_date}T${r.end_time}:00+08:00`)<=new Date();}
 function actionable(a,kind){if(kind==='transfer'&&!a.old_slot_id)return false;if(kind==='leave')return state.role==='NORMAL'&&a.approve_status==='PENDING';if(kind==='withdrawal')return state.role==='SUPER'&&a.approve_status==='PENDING'&&!a.requires_first;return state.role==='NORMAL'&&a.first_status==='PENDING'&&a.final_status==='PENDING'||state.role==='SUPER'&&a.first_status==='APPROVED'&&a.final_status==='PENDING';}
@@ -119,7 +104,7 @@ function overview(){
  const d=state.data;const today=getDate();const pending=['leave','transfer','withdrawal'].reduce((n,k)=>n+(d[k]||[]).filter(a=>state.role==='STUDENT'?appStatus(a,k)[0]==='PENDING':actionable(a,k)).length,0);
  const upcoming=d.schedules.filter(r=>canFuture(r)).sort((a,b)=>(a.schedule_date+a.start_time).localeCompare(b.schedule_date+b.start_time));
  const metrics=state.role==='STUDENT'?[['累计服务时长',Number((d.hours.total_minutes/60).toFixed(2)),'小时','按全部有效服务记录汇总'],['当前信用分',d.credit.credit_score,'分',label[d.credit.status]],['待处理申请',pending,'项','请假、换班和退队'],['每周固定班次',(d.memberships||[]).length,'个','可申请长期调整时段']]:[['今日排班',d.schedules.filter(r=>r.schedule_date===today&&r.status!=='CANCELLED').length,'人次','当前权限范围内的安排'],['待处理申请',pending,'项','需要你审批或确认'],['待登记考勤',d.schedules.filter(r=>r.status==='ACTIVE'&&isEnded(r)).length,'次','已结束但尚未登记'],[state.role==='SUPER'?'在队志愿者':'负责服务班次',state.role==='SUPER'?d.students.filter(s=>s.status==='ACTIVE').length:d.slots.filter(s=>s.manager_admin_id===state.me.admin_id).length,state.role==='SUPER'?'人':'个',state.role==='SUPER'?'当前正常参与服务':'仅显示你负责的班次']];
- $('#main').innerHTML=`<section class="welcome"><div><div class="eyebrow">${roleName(state.role)}工作台</div><h1>${esc(state.me.name)}，欢迎回来。</h1><p>${state.role==='STUDENT'?'查看接下来的服务安排，及时跟进你的申请。':'先处理待办，再确认接下来的服务安排。'}</p></div><div class="date-stamp"><strong>${today.slice(5).replace('-',' / ')}</strong>${today.slice(0,4)} 年 · ${new Intl.DateTimeFormat('zh-CN',{weekday:'long',timeZone:'Asia/Shanghai'}).format(new Date())}</div></section><section class="metrics" aria-label="工作概览统计">${metrics.map(([l,v,u,f])=>`<div class="metric"><div class="metric-label">${l}</div><div class="metric-value">${esc(v)}<small>${u}</small></div><div class="metric-foot">${esc(f)}</div></div>`).join('')}</section><div class="overview-grid"><div>${myFixedSlotsPanel()}<section class="panel"><header class="panel-header"><div><h2>接下来的服务</h2><p>按服务日期排序，显示最近五条安排</p></div><button class="text-button" data-page="schedules">查看全部 →</button></header>${scheduleTable(upcoming.slice(0,5),false)}</section><section class="panel"><header class="panel-header"><div><h2>${state.role==='STUDENT'?'申请进度':'审批待办'}</h2><p>${pending?`目前有 ${pending} 项申请等待处理`:'当前没有待处理申请'}</p></div><button class="text-button" data-page="applications">进入申请${state.role==='STUDENT'?'记录':'管理'} →</button></header><div class="panel-content">${pending?`<p class="muted">${state.role==='STUDENT'?'审批结果会显示在申请记录中。换班确认前，请仍按原排班参加服务。':'请先核对申请内容，再进行审批。换班需要初审通过后才能最终确认。'}</p>`:'<p class="muted">新的申请提交后，会出现在这里。</p>'}</div></section></div><div><section class="panel"><header class="panel-header"><h2>常用操作</h2></header><div class="panel-content quick-links">${state.role==='STUDENT'?quick('申请请假或换班','选择对应排班，填写申请原因','schedules'):quick('查看服务安排','核对班次、人员与考勤状态','schedules')}${quick(state.role==='STUDENT'?'查看服务时长':'处理申请',state.role==='STUDENT'?'逐笔查看已认定的服务记录':'请假、换班和退队审批',state.role==='STUDENT'?'hours':'applications')}${state.role!=='STUDENT'?quick('查看服务班次','了解服务时间、地点与人数上限',state.role==='SUPER'?'basics':'slots'):''}</div></section><section class="panel panel-quiet"><header class="panel-header"><h2>工作提示</h2></header><div class="panel-content"><p class="rule-note">请假获批后不计服务时长，也不按缺勤扣分。</p><p class="rule-note">正常出勤和迟到均计完整班次时长。考勤需在班次结束后登记。</p><p class="rule-note">${state.role==='STUDENT'?'排班调整须等待最终确认，信用分归零后将暂停后续服务安排。':'重要修改会留下操作记录，便于后续核对。'}</p></div></section></div></div>`;
+ $('#main').innerHTML=`<section class="welcome"><div><div class="eyebrow">${roleName(state.role)}工作台</div><h1>${esc(state.me.name)}，欢迎回来。</h1><p>${state.role==='STUDENT'?'查看接下来的服务安排，及时跟进你的申请。':'先处理待办，再确认接下来的服务安排。'}</p></div><div class="date-stamp"><strong>${today.slice(5).replace('-',' / ')}</strong>${today.slice(0,4)} 年 · ${new Intl.DateTimeFormat('zh-CN',{weekday:'long',timeZone:'Asia/Shanghai'}).format(new Date())}</div></section><section class="metrics" aria-label="工作概览统计">${metrics.map(([l,v,u,f])=>{const ic={累计服务时长:'clock',当前信用分:'shield',待处理申请:'check',每周固定班次:'calendar',今日排班:'calendar',待登记考勤:'clock',在队志愿者:'users',负责服务班次:'calendar'}[l]||'info';const accent=l==='累计服务时长'||l==='在队志愿者';return `<div class="metric"><div class="metric-label">${uiIcon(ic)}${l}</div><div class="metric-value${accent?' accent':''}">${esc(v)}<small>${u}</small></div><div class="metric-foot">${esc(f)}</div></div>`;}).join('')}</section><div class="overview-grid"><div>${myFixedSlotsPanel()}<section class="panel"><header class="panel-header"><div><h2>接下来的服务</h2><p>按服务日期排序，显示最近五条安排</p></div><button class="text-button" data-page="schedules">查看全部 →</button></header>${scheduleTable(upcoming.slice(0,5),false)}</section><section class="panel"><header class="panel-header"><div><h2>${state.role==='STUDENT'?'申请进度':'审批待办'}</h2><p>${pending?`目前有 ${pending} 项申请等待处理`:'当前没有待处理申请'}</p></div><button class="text-button" data-page="applications">进入申请${state.role==='STUDENT'?'记录':'管理'} →</button></header><div class="panel-content">${pending?`<p class="muted">${state.role==='STUDENT'?'审批结果会显示在申请记录中。换班确认前，请仍按原排班参加服务。':'请先核对申请内容，再进行审批。换班需要初审通过后才能最终确认。'}</p>`:'<p class="muted">新的申请提交后，会出现在这里。</p>'}</div></section></div><div><section class="panel"><header class="panel-header"><h2>常用操作</h2></header><div class="panel-content quick-links">${state.role==='STUDENT'?quick('申请请假或换班','选择对应排班，填写申请原因','schedules'):quick('查看服务安排','核对班次、人员与考勤状态','schedules')}${quick(state.role==='STUDENT'?'查看服务时长':'处理申请',state.role==='STUDENT'?'逐笔查看已认定的服务记录':'请假、换班和退队审批',state.role==='STUDENT'?'hours':'applications')}${state.role!=='STUDENT'?quick('查看服务班次','了解服务时间、地点与人数上限',state.role==='SUPER'?'basics':'slots'):''}</div></section><section class="panel panel-quiet"><header class="panel-header"><h2>工作提示</h2></header><div class="panel-content"><p class="rule-note">请假获批后不计服务时长，也不按缺勤扣分。</p><p class="rule-note">正常出勤和迟到均计完整班次时长。考勤需在班次结束后登记。</p><p class="rule-note">${state.role==='STUDENT'?'排班调整须等待最终确认，信用分归零后将暂停后续服务安排。':'重要修改会留下操作记录，便于后续核对。'}</p></div></section></div></div>`;
 }
 function quick(title,text,page){return `<button class="quick-link" data-page="${page}"><div><strong>${title}</strong><span>${text}</span></div><em aria-hidden="true">→</em></button>`;}
 function scheduleTable(records,actions=true){return table(['服务日期','志愿者','服务班次','状态',...(actions?['操作']:[])],records.map(r=>`<tr><td><strong>${esc(r.schedule_date)}</strong><small>${r.week_no?`第 ${r.week_no} 周 · `:''}${r.schedule_kind==='WEEKLY'?'周日为统计归属日':r.schedule_kind==='EVENT'?'非固定服务':esc(r.start_time)+' 至 '+esc(r.end_time)}</small></td><td>${esc(studentName(r.student_id))}<small>${esc(r.student_id)}</small></td><td><strong>${esc(slotName(r.slot_id))}</strong><small>${esc(r.location)}</small></td><td>${badge(r.attendance_status||r.status)}${r.attendance_source==='AUTO_WEEKLY'?'<small>按周自动结算</small>':''}${r.leave_approved&&!r.attendance_status?'<small>请假已获批</small>':''}</td>${actions?`<td><div class="row-actions">${scheduleActions(r)}</div></td>`:''}</tr>`),'暂无具体日期排班','设置学期后按固定时段生成，用于请假及考勤。');}
@@ -205,6 +190,7 @@ function field(name,title,{type='text',value='',options,required=true,full=false
 const reasonField=()=>field('reason','原因说明',{type:'textarea',full:true,maxLength:500,placeholder:'请填写具体原因，便于审批和后续核对'});
 function scheduleOptions(){return state.data.schedules.filter(canFuture).map(r=>[r.schedule_id,`${r.schedule_date} ${slotName(r.slot_id)}`]);}
 function action(name,id,kind){
+ if(name==='menu-close'){document.querySelector('.workspace')?.classList.remove('menu-open');return;}
  if(modalBusy)return;
  if(leaderAction(name,id)||directoryAction(name,id)||governanceAction(name,id,kind)||businessAction(name,id,kind)||semesterAction(name,id)||rosterAction(name,id))return;
  const r=rowsOf(state.data.schedules,'schedule_id',id);
@@ -255,6 +241,12 @@ function validate(form){
  return '';
 }
 document.addEventListener('click',async e=>{
+ const reveal=e.target.closest('[data-reveal]');
+ if(reveal&&typeof reveal.getAttribute==='function'){
+  const input=document.getElementById(reveal.getAttribute('data-reveal'));
+  if(input){const show=input.type==='password';input.type=show?'text':'password';reveal.setAttribute('aria-label',show?'隐藏密码':'显示密码');const label=reveal.querySelector('span');if(label)label.textContent=show?'隐藏':'显示';}
+  return;
+ }
  const target=e.target.closest('button,[data-page]');if(!target)return;
  if(target.dataset.page){navigate(target.dataset.page);return;}
  if(target.dataset.tab){state.tab=target.dataset.tab;renderPage();return;}
@@ -321,5 +313,295 @@ document.addEventListener('change',e=>{if(e.target.id==='business-filter'){state
 
 Object.assign(operationNames,{CREATE_BUSINESS:'新增业务',RENAME_BUSINESS:'修改业务名称',ARCHIVE_BUSINESS:'停用归档业务',RESTORE_BUSINESS:'恢复业务',ADD_BUSINESS_SLOT:'新增业务时段',SET_GROUP_MEMBER:'调整小组归属',IMPORT_MEMBERS:'导入业务小组名单',SET_COLLECTION_MANAGERS:'设置征集管理范围',REQUEST_COLLECTION_SCOPE:'申请征集管理范围',DECIDE_COLLECTION_SCOPE:'审批征集管理范围',REVIEW_HOURS_FIRST:'时长申报初审',REVIEW_HOURS_FINAL:'时长申报终审',CORRECT_HOURS_REVIEW:'二次更正时长审批',CLOSE_COLLECTION:'结束时长征集',RESET_PASSWORD:'重置账号密码',CONFIGURE_BUSINESS:'设置业务管理员',SET_BUSINESS_WEEK:'更正每周开工安排',CONFIRM_GARDEN:'确认花园本周服务',CREATE_COLLECTION:'发布时长征集',DECIDE_HOURS:'审批时长申报',IMPORT_SPECIALTY:'导入专项名单及时长',CREATE_EVENT:'录入临时服务',RECOGNIZE_EVENT:'认定临时服务时长',PLAN_MEMBERSHIPS:'设置归属生效日期',SET_BUSINESS_MEMBER:'调整专项业务归属'});
 Object.assign(fieldNames,{group_id:'小组编号',group_ids:'小组范围编号',group_name:'小组名称',new_students:'新建账号数',kind:'业务类型',business_ids:'业务范围编号',submission_deadline:'申报截止日期',attachments:'附件信息',business_id:'业务编号',business_name:'业务名称',week_no:'周次',working:'是否上工',effective_date:'生效日期',student_ids:'参与队员',items:'工作事项',imported:'导入条数',skipped:'跳过条数',batch_id:'导入批次',duplicate_choices:'重复行处理',active:'是否加入'});
+
+/* ============================================================================
+   v2.5 登录页、外壳与主题（墨绿主视觉 + 浅绿色表单区；浅色/深色/跟随系统）
+   ========================================================================== */
+function uiIcon(name, className) {
+  return `<svg class="i ${className || ''}" aria-hidden="true"><use href="#i-${name}"></use></svg>`;
+}
+
+const THEME_KEY = 'volunteer_theme';
+const THEME_MODES = ['light', 'dark', 'system'];
+const THEME_LABELS = { light: '浅色', dark: '深色', system: '跟随系统' };
+
+function themeMode() {
+  try {
+    const value = localStorage.getItem(THEME_KEY);
+    return THEME_MODES.includes(value) ? value : 'system';
+  } catch (error) {
+    return 'system';
+  }
+}
+
+function systemTheme() {
+  try {
+    return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  } catch (error) {
+    return 'light';
+  }
+}
+
+function currentTheme() {
+  const mode = themeMode();
+  return mode === 'system' ? systemTheme() : mode;
+}
+
+function themeText() {
+  return '外观：' + THEME_LABELS[themeMode()];
+}
+
+function syncThemeButtons() {
+  const dark = currentTheme() === 'dark';
+  document.querySelectorAll('[data-action="theme"]').forEach(button => {
+    const label = button.querySelector('[data-theme-label]');
+    if (label) label.textContent = themeText();
+    const use = button.querySelector('use');
+    if (use) use.setAttribute('href', dark ? '#i-sun' : '#i-moon');
+  });
+}
+
+function applyTheme() {
+  setTheme(currentTheme());
+  syncThemeButtons();
+}
+
+function setThemeMode(mode) {
+  try {
+    localStorage.setItem(THEME_KEY, mode);
+  } catch (error) {
+    /* 隐私模式下仅当前页面生效 */
+  }
+  applyTheme();
+}
+
+function toggleTheme() {
+  const index = THEME_MODES.indexOf(themeMode());
+  setThemeMode(THEME_MODES[(index + 1) % THEME_MODES.length]);
+}
+
+function loginView() {
+  document.title = '登录 · 图书馆志愿服务';
+  state.me = null;
+  state.role = null;
+  // 从改密页返回时：自动带出身份与账号，并提示使用新密码（避免浏览器填充旧密码）。
+  let hint = null;
+  try {
+    hint = JSON.parse(sessionStorage.getItem('password_changed') || 'null');
+    if (hint) sessionStorage.removeItem('password_changed');
+  } catch (error) {
+    hint = null;
+  }
+  const hintKind = hint && hint.kind === 'student' ? 'student' : 'admin';
+  const hintAccount = hint && hint.account ? esc(String(hint.account)) : '';
+  const hintNotice = hint
+    ? `<div class="notice success" role="status">${uiIcon('check-circle')}密码已更新，请使用新密码登录${hintAccount ? `（${hintKind === 'student' ? '志愿者' : '管理员'} · ${hintAccount}）` : ''}。</div>`
+    : '';
+  app.innerHTML = `<main class="auth-page" id="main">
+    <section class="auth-hero" aria-label="系统简介">
+      <p class="auth-hero-top">图书馆志愿服务管理系统</p>
+      <div class="auth-hero-main">
+        <div class="auth-brand">
+          <span class="auth-brand-tile">${uiIcon('book')}</span>
+          <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
+        </div>
+        <span class="auth-chip">志愿服务 · 一站式管理</span>
+        <h1 class="auth-headline">把每一次志愿服务，<br>安排妥当。</h1>
+        <p class="auth-lead">从排班与考勤，到请假审批、服务时长与信用记录，在同一处完成日常管理，每一步都可追溯。</p>
+        <div class="auth-features">
+          <div class="auth-feature">
+            <span class="auth-feature-icon">${uiIcon('calendar')}</span>
+            <span><strong>排班与考勤</strong><small>按学期日历自动生成，结束后登记出勤。</small></span>
+          </div>
+          <div class="auth-feature">
+            <span class="auth-feature-icon">${uiIcon('check')}</span>
+            <span><strong>申请与审批</strong><small>请假、长期换班和退队，进度清晰可查。</small></span>
+          </div>
+          <div class="auth-feature">
+            <span class="auth-feature-icon">${uiIcon('clock')}</span>
+            <span><strong>时长与信用</strong><small>逐笔记录，保留每次变更的依据。</small></span>
+          </div>
+          <div class="auth-feature">
+            <span class="auth-feature-icon">${uiIcon('users')}</span>
+            <span><strong>分队与负责人</strong><small>按业务与小组分工，权限范围明确。</small></span>
+          </div>
+        </div>
+        <div class="auth-stats" aria-label="系统概况">
+          <div class="auth-stat"><strong>335</strong><small>在册志愿者</small></div>
+          <div class="auth-stat"><strong>7,035</strong><small>累计服务小时</small></div>
+          <div class="auth-stat"><strong>35</strong><small>固定服务时段</small></div>
+        </div>
+      </div>
+      <p class="auth-quote">${uiIcon('book')}以书为伴，以服务为荣 —— 四川大学图书馆志愿服务队</p>
+    </section>
+    <section class="auth-panel">
+      <button class="theme-button auth-theme" type="button" data-action="theme" aria-label="切换外观">
+        <span data-theme-icon>${uiIcon('moon')}</span>
+        <span data-theme-label>${themeText()}</span>
+      </button>
+      <div class="auth-card">
+        <div class="auth-mobile-brand">
+          <span class="brand-mark">${uiIcon('book')}</span>
+          <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
+        </div>
+        <h2>欢迎回来</h2>
+        <p class="auth-sub">使用你的账号登录工作台。</p>
+        ${hintNotice}
+        <form class="auth-form" id="login-form" novalidate>
+          <div class="auth-field">
+            <label for="login-kind">登录身份</label>
+            <div class="auth-control">
+              ${uiIcon('users', 'lead')}
+              <select id="login-kind" name="kind">
+                <option value="admin"${hintKind === 'admin' ? ' selected' : ''}>管理员</option>
+                <option value="student"${hintKind === 'student' ? ' selected' : ''}>志愿者</option>
+              </select>
+              <span class="trail">${uiIcon('chevron-down')}</span>
+            </div>
+          </div>
+          <div class="auth-field">
+            <label for="login-account">账号</label>
+            <div class="auth-control">
+              ${uiIcon('user', 'lead')}
+              <input id="login-account" name="account" type="text" autocomplete="username"
+                     value="${hintAccount}"
+                     placeholder="请输入管理员账号或学号" required maxlength="64">
+              <span class="trail">${uiIcon('help')}</span>
+            </div>
+          </div>
+          <div class="auth-field">
+            <div class="auth-label-row">
+              <label for="login-password">密码</label>
+              <a class="auth-link" href="/password#reset">忘记密码？</a>
+            </div>
+            <div class="auth-control">
+              ${uiIcon('lock', 'lead')}
+              <input id="login-password" name="password" type="password"
+                     ${hint ? 'autocomplete="new-password"' : 'autocomplete="current-password"'}
+                     placeholder="请输入密码" required maxlength="128">
+              <span class="trail">
+                <button class="auth-reveal" type="button" data-reveal="login-password" aria-label="显示密码">
+                  ${uiIcon('eye')}<span>显示</span>
+                </button>
+              </span>
+            </div>
+          </div>
+          <div class="auth-row">
+            <span class="auth-help">登录有效期 1 小时</span>
+            <a class="auth-link" href="/password#reset">无法登录？联系队伍组</a>
+          </div>
+          <div id="login-error" class="notice error" role="alert" hidden></div>
+          <button class="auth-submit" type="submit">登录工作台 ${uiIcon('arrow-right')}</button>
+        </form>
+        <div class="auth-divider" style="margin-top:22px">其他操作</div>
+        <p class="auth-help" style="text-align:center;margin-top:12px">
+          <a class="auth-link" href="/password#reset">找回密码</a>
+          <span class="muted"> · </span>
+          <a class="auth-link" href="/password#change">修改密码</a>
+        </p>
+        <p class="auth-help" style="margin-top:14px">不同角色登录后会看到对应的工作范围；首次使用请向项目管理员获取账号和密码。</p>
+        <div class="auth-foot">
+          <span>四川大学图书馆志愿服务队</span>
+          <span class="auth-foot-right">© 2026 四川大学图书馆 · 仅限校内授权使用</span>
+        </div>
+      </div>
+    </section>
+  </main>`;
+  if (hint) {
+    const passwordInput = $('#login-password');
+    if (passwordInput && passwordInput.focus) passwordInput.focus();
+  }
+}
+
+function buildShell() {
+  const available = nav.filter(n => n[2].includes(state.role));
+  if (!available.some(n => n[0] === state.page)) state.page = 'overview';
+  app.innerHTML = `<div class="workspace">
+    <aside class="sidebar" aria-label="主导航">
+      <a href="/" class="brand">
+        <span class="brand-mark" aria-hidden="true">${uiIcon('book')}</span>
+        <span><strong>图书馆志愿服务</strong><small>管理工作台</small></span>
+      </a>
+      <div class="nav-label">日常工作</div>
+      <nav class="nav-list">${navigationHtml(available)}</nav>
+      <div class="sidebar-bottom">
+        <a href="/password#change">${uiIcon('key')}修改密码</a>
+        <a href="/docs">${uiIcon('external')}中文接口说明</a>
+        <div class="profile">
+          <span class="avatar" aria-hidden="true">${esc(state.me.name.slice(0, 1))}</span>
+          <span><strong>${esc(state.me.name)}</strong><small>${roleName(state.role)}</small></span>
+        </div>
+        <button class="text-button" style="text-align:left" data-action="logout">退出登录</button>
+      </div>
+    </aside>
+    <button class="sidebar-backdrop" type="button" data-action="menu-close" aria-label="关闭导航菜单"></button>
+    <div class="workspace-body">
+      <header class="topbar">
+        <div class="button-row">
+          <button class="btn small mobile-menu" data-action="menu" aria-label="打开或关闭导航菜单">${uiIcon('menu')}<span>菜单</span></button>
+          <div class="breadcrumb"><span>管理工作台</span><span>/</span><strong id="breadcrumb-title">工作概览</strong></div>
+        </div>
+        <div class="topbar-actions">
+          <span class="connection" id="connection">正在连接</span>
+          <button class="theme-button" data-action="theme">
+            <span data-theme-icon>${uiIcon('moon')}</span>
+            <span data-theme-label>${themeText()}</span>
+          </button>
+        </div>
+      </header>
+      <main class="main-content" id="main" tabindex="-1"></main>
+    </div>
+  </div>`;
+  startInboxPolling();
+  request('/health').then(() => {
+    if ($('#connection')) $('#connection').textContent = '服务连接正常';
+  }).catch(() => {
+    if ($('#connection')) {
+      $('#connection').textContent = '服务连接中断';
+      $('#connection').classList.add('failed');
+    }
+  });
+}
+
+try {
+  const themeMedia = matchMedia('(prefers-color-scheme: dark)');
+  if (themeMedia.addEventListener) {
+    themeMedia.addEventListener('change', () => {
+      if (themeMode() === 'system') applyTheme();
+    });
+  }
+} catch (error) {
+  /* 旧浏览器忽略系统主题变化 */
+}
+
+applyTheme();
+
+/* 窄屏表格卡片化：只在浏览器里给表头补 data-label（测试桩没有 MutationObserver，自动跳过）。 */
+function decorateTables(){
+ if(typeof document==='undefined'||!document.getElementById)return;
+ const main=document.getElementById('main');
+ if(!main||!main.querySelectorAll)return;
+ main.querySelectorAll('table').forEach(table=>{
+  if(table.dataset&&table.dataset.cards==='1')return;
+  const heads=Array.from(table.querySelectorAll('thead th')).map(th=>(th.textContent||'').trim());
+  if(heads.length<4)return;
+  if(table.dataset)table.dataset.cards='1';
+  table.classList.add('table-cards');
+  Array.from(table.querySelectorAll('tbody tr')).forEach(row=>{
+   Array.from(row.querySelectorAll('td')).forEach((cell,index)=>{
+    if(index>0&&heads[index])cell.setAttribute('data-label',heads[index]);
+   });
+  });
+ });
+}
+if(typeof MutationObserver!=='undefined'&&typeof document!=='undefined'&&document.body){
+ decorateTables();
+ new MutationObserver(()=>decorateTables()).observe(document.body,{childList:true,subtree:true});
+}
+document.addEventListener('keydown',event=>{
+ if(event.key!=='Escape')return;
+ const workspace=document.querySelector('.workspace');
+ if(workspace&&workspace.classList)workspace.classList.remove('menu-open');
+});
 
 start();

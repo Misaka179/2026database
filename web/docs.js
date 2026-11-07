@@ -80,20 +80,41 @@
   let sessionGeneration = 0;
   let loginRequestSequence = 0;
 
-  function isDark() {
-    return document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+  const DOCS_THEME_KEY = 'volunteer_theme';
+  const DOCS_THEME_MODES = ['light', 'dark', 'system'];
+  const DOCS_THEME_LABELS = { light: '浅色', dark: '深色', system: '跟随系统' };
+  function docsThemeMode() {
+    try {
+      const value = localStorage.getItem(DOCS_THEME_KEY);
+      return DOCS_THEME_MODES.includes(value) ? value : 'system';
+    } catch {
+      return 'system';
+    }
   }
-  function updateThemeLabel() { $('#docs-theme').textContent = isDark() ? '浅色外观' : '深色外观'; }
-  try {
-    const savedTheme = localStorage.getItem('volunteer_theme');
-    if (['light', 'dark'].includes(savedTheme)) document.documentElement.dataset.theme = savedTheme;
-  } catch { /* Use the system theme when browser storage is unavailable. */ }
+  function docsResolvedTheme() {
+    const mode = docsThemeMode();
+    return mode === 'system'
+      ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : mode;
+  }
+  function isDark() {
+    return docsResolvedTheme() === 'dark';
+  }
+  function updateThemeLabel() {
+    document.documentElement.dataset.theme = docsResolvedTheme();
+    $('#docs-theme').textContent = '外观：' + DOCS_THEME_LABELS[docsThemeMode()];
+  }
   updateThemeLabel();
-  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeLabel);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (docsThemeMode() === 'system') updateThemeLabel();
+  });
   $('#docs-theme').addEventListener('click', () => {
-    const theme = isDark() ? 'light' : 'dark';
-    document.documentElement.dataset.theme = theme;
-    try { localStorage.setItem('volunteer_theme', theme); } catch { /* Theme still applies to the current page. */ }
+    const next = DOCS_THEME_MODES[(DOCS_THEME_MODES.indexOf(docsThemeMode()) + 1) % DOCS_THEME_MODES.length];
+    try {
+      localStorage.setItem(DOCS_THEME_KEY, next);
+    } catch {
+      /* 隐私模式下仅当前页面生效 */
+    }
     updateThemeLabel();
   });
 

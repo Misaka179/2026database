@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 .env
 .venv/
+# 本机打包的 Python 运行环境，不入库；换机时按 README 重新准备环境即可
+.conda/

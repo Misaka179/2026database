@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>设计预览 · 工作概览 · 图书馆志愿服务</title>
+<link rel="stylesheet" href="preview.css">
+<script>
+  try {
+    var mode = localStorage.getItem('preview-theme') || 'system';
+    var dark = mode === 'dark' ||
+      (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  } catch (error) { /* 忽略 */ }
+</script>
+<script src="preview.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#main">跳转到主要内容</a>
+
+<div class="workspace">
+  <!-- 侧栏 -->
+  <aside class="sidebar" aria-label="主导航">
+    <a class="brand" href="index.html">
+      <span class="brand-mark"><svg class="i" aria-hidden="true"><use href="#i-book"></use></svg></span>
+      <span><strong>图书馆志愿服务</strong><small>志愿队管理工作台</small></span>
+    </a>
+
+    <nav class="nav" aria-label="工作台页面">
+      <div class="nav-pinned">
+        <a class="nav-link active" href="overview.html" aria-current="page">
+          <svg class="i" aria-hidden="true"><use href="#i-home"></use></svg>工作概览
+        </a>
+        <a class="nav-link" href="#">
+          <svg class="i" aria-hidden="true"><use href="#i-inbox"></use></svg>收件箱
+          <span class="nav-badge">2</span>
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-group-toggle" type="button" data-nav-toggle
+                aria-expanded="true" aria-controls="nav-people">
+          业务与人员
+          <svg class="i" aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+        </button>
+        <div class="nav-children" id="nav-people">
+          <a class="nav-link" href="#">分队与美育负责人</a>
+          <a class="nav-link" href="#">负责人工作台</a>
+          <a class="nav-link" href="#">业务管理</a>
+          <a class="nav-link" href="#">小组与成员</a>
+          <a class="nav-link" href="#">基础资料</a>
+          <a class="nav-link" href="#">本时段队员</a>
+          <a class="nav-link" href="#">服务班次</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-group-toggle" type="button" data-nav-toggle
+                aria-expanded="true" aria-controls="nav-work">
+          排班与考勤
+          <svg class="i" aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+        </button>
+        <div class="nav-children" id="nav-work">
+          <a class="nav-link" href="schedules.html">排班与考勤</a>
+          <a class="nav-link" href="#">学期与日历</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-group-toggle" type="button" data-nav-toggle
+                aria-expanded="false" aria-controls="nav-hours">
+          时长与信用
+          <svg class="i" aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+        </button>
+        <div class="nav-children" id="nav-hours" hidden>
+          <a class="nav-link" href="#">时长征集</a>
+          <a class="nav-link" href="#">服务时长</a>
+          <a class="nav-link" href="#">专项导入</a>
+          <a class="nav-link" href="#">信用管理</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-group-toggle" type="button" data-nav-toggle
+                aria-expanded="false" aria-controls="nav-approvals">
+          申请与审批
+          <svg class="i" aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+        </button>
+        <div class="nav-children" id="nav-approvals" hidden>
+          <a class="nav-link" href="applications.html">申请与审批</a>
+          <a class="nav-link" href="#">征集管理范围</a>
+        </div>
+      </div>
+
+      <div class="nav-group">
+        <button class="nav-group-toggle" type="button" data-nav-toggle
+                aria-expanded="false" aria-controls="nav-system">
+          系统管理
+          <svg class="i" aria-hidden="true"><use href="#i-chevron-down"></use></svg>
+        </button>
+        <div class="nav-children" id="nav-system" hidden>
+          <a class="nav-link" href="#">操作日志</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <a class="docs-link" href="password.html#change">
+        <svg class="i" aria-hidden="true"><use href="#i-key"></use></svg>修改密码
+      </a>
+      <a class="docs-link" href="#">
+        <svg class="i" aria-hidden="true"><use href="#i-external"></use></svg>中文接口说明
+      </a>
+      <div class="profile">
+        <span class="avatar" aria-hidden="true">王</span>
+        <span><strong>王老师</strong><small>超级管理员</small></span>
+      </div>
+      <button class="logout" type="button">
+        <svg class="i" aria-hidden="true"><use href="#i-logout"></use></svg>退出登录
+      </button>
+    </div>
+  </aside>
+
+  <div class="sidebar-backdrop" data-menu-backdrop data-menu-close hidden></div>
+
+  <!-- 主体 -->
+  <div class="workspace-body">
+    <header class="topbar">
+      <div class="topbar-left">
+        <button class="icon-button mobile-menu" type="button" data-menu-toggle aria-label="打开导航菜单">
+          <svg class="i" aria-hidden="true"><use href="#i-menu"></use></svg>
+        </button>
+        <div class="breadcrumb">
+          <span class="crumb-parent">管理工作台</span><span class="sep">/</span><strong>工作概览</strong>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="connection">服务连接正常</span>
+        <button class="theme-button" type="button" data-theme-toggle>
+          <svg class="i" aria-hidden="true"><use href="#i-moon"></use></svg>
+          <span>外观：跟随系统</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="main-content" id="main">
+      <div class="welcome">
+        <div>
+          <h1>下午好，王老师</h1>
+          <p>今天有 3 项待处理事务；第 10 周服务安排已生成，已结算至 11 月 2 日。</p>
+        </div>
+        <div class="date-stamp">
+          <strong>2026-11-07</strong>
+          周五 · 第 10 周
+        </div>
+      </div>
+
+      <div class="notice" role="status">
+        <svg class="i" aria-hidden="true"><use href="#i-info"></use></svg>
+        <span>第 10 周（11-03 至 11-09）已生成服务安排；11 月 8 日为调休班表，请在「学期与日历」核对后通知队员。</span>
+      </div>
+
+      <!-- 指标卡 -->
+      <section class="metrics" aria-label="关键指标">
+        <div class="metric">
+          <div class="metric-label">
+            <svg class="i" aria-hidden="true"><use href="#i-check"></use></svg>待处理审批
+          </div>
+          <div class="metric-value">3<small>项</small></div>
+          <div class="metric-foot"><span class="down">1 项超过 24 小时</span></div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">
+            <svg class="i" aria-hidden="true"><use href="#i-inbox"></use></svg>未读通知
+          </div>
+          <div class="metric-value">2<small>条</small></div>
+          <div class="metric-foot">收件箱最近更新 2 小时前</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">
+            <svg class="i" aria-hidden="true"><use href="#i-calendar"></use></svg>本周服务安排
+          </div>
+          <div class="metric-value">371<small>人次</small></div>
+          <div class="metric-foot"><span class="up">较上周 +12 人次</span></div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">
+            <svg class="i" aria-hidden="true"><use href="#i-clock"></use></svg>累计服务时长
+          </div>
+          <div class="metric-value accent">7,035.0<small>小时</small></div>
+          <div class="metric-foot">已结算至 2026-11-02</div>
+        </div>
+      </section>
+
+      <!-- 主内容两栏 -->
+      <div class="overview-grid">
+        <div class="stack">
+          <!-- 待办 -->
+          <section class="panel" aria-label="待办事项">
+            <div class="panel-header">
+              <div>
+                <h2>待办事项</h2>
+                <p>需要你处理的事项，按提交时间排序</p>
+              </div>
+              <a class="see-all" href="#">查看全部 →</a>
+            </div>
+            <div class="panel-content flush">
+              <ul class="todo-list">
+                <li>
+                  <a class="todo" href="applications.html" style="text-decoration:none;color:inherit">
+                    <span class="todo-icon warn"><svg class="i" aria-hidden="true"><use href="#i-alert"></use></svg></span>
+                    <span class="todo-main">
+                      <strong>请假申请待审批 · 张三（20260001）</strong>
+                      <small>11 月 8 日 周一-一时段 · 原因：参加学院期中考试</small>
+                    </span>
+                    <span class="todo-time">18 分钟前</span>
+                    <svg class="i chev" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+                  </a>
+                </li>
+                <li>
+                  <a class="todo" href="applications.html" style="text-decoration:none;color:inherit">
+                    <span class="todo-icon"><svg class="i" aria-hidden="true"><use href="#i-refresh"></use></svg></span>
+                    <span class="todo-main">
+                      <strong>长期换班待终审 · 李四（20260002）</strong>
+                      <small>周一-一时段 → 周三-三时段 · 已通过初审</small>
+                    </span>
+                    <span class="todo-time">1 小时前</span>
+                    <svg class="i chev" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+                  </a>
+                </li>
+                <li>
+                  <a class="todo" href="#" style="text-decoration:none;color:inherit">
+                    <span class="todo-icon"><svg class="i" aria-hidden="true"><use href="#i-clock"></use></svg></span>
+                    <span class="todo-main">
+                      <strong>时长征集待终审 · 明远学术汇</strong>
+                      <small>3 条申报等待确认，截止 11 月 10 日</small>
+                    </span>
+                    <span class="todo-time">2 小时前</span>
+                    <svg class="i chev" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+                  </a>
+                </li>
+                <li>
+                  <a class="todo" href="#" style="text-decoration:none;color:inherit">
+                    <span class="todo-icon info"><svg class="i" aria-hidden="true"><use href="#i-inbox"></use></svg></span>
+                    <span class="todo-main">
+                      <strong>收件箱有 2 条未读通知</strong>
+                      <small>系统提醒：有 1 项征集将在 3 天后到期</small>
+                    </span>
+                    <span class="todo-time">昨天</span>
+                    <svg class="i chev" aria-hidden="true"><use href="#i-chevron-right"></use></svg>
+                  </a>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+          <!-- 最近服务安排 -->
+          <section class="panel" aria-label="最近服务安排">
+            <div class="panel-header">
+              <div>
+                <h2>最近服务安排</h2>
+                <p>第 10 周 · 已结算 347 人次，待登记 24 人次</p>
+              </div>
+              <a class="see-all" href="schedules.html">查看全部 →</a>
+            </div>
+            <div class="panel-content flush">
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th scope="col">服务日期</th>
+                      <th scope="col">志愿者</th>
+                      <th scope="col">服务班次</th>
+                      <th scope="col">状态</th>
+                      <th scope="col" class="num">认定时长</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td><span class="primary-cell">11-07 周五</span><span class="sub">第 10 周</span></td>
+                      <td>张三<span class="sub">20260001</span></td>
+                      <td>周五-一时段<span class="sub">08:15–09:55</span></td>
+                      <td><span class="badge good">已结算</span></td>
+                      <td class="num">2.0 h</td>
+                    </tr>
+                    <tr>
+                      <td><span class="primary-cell">11-07 周五</span><span class="sub">第 10 周</span></td>
+                      <td>李四<span class="sub">20260002</span></td>
+                      <td>周五-三时段<span class="sub">13:50–16:25</span></td>
+                      <td><span class="badge pending">待登记</span></td>
+                      <td class="num">—</td>
+                    </tr>
+                    <tr>
+                      <td><span class="primary-cell">11-06 周四</span><span class="sub">第 10 周</span></td>
+                      <td>王五<span class="sub">20260003</span></td>
+                      <td>周四-五时段<span class="sub">19:20–21:00</span></td>
+                      <td><span class="badge info">请假</span></td>
+                      <td class="num">—</td>
+                    </tr>
+                    <tr>
+                      <td><span class="primary-cell">11-06 周四</span><span class="sub">第 10 周</span></td>
+                      <td>赵六<span class="sub">20260004</span></td>
+                      <td>周四-一时段<span class="sub">08:15–09:55</span></td>
+                      <td><span class="badge warning">迟到</span></td>
+                      <td class="num">2.0 h</td>
+                    </tr>
+                    <tr>
+                      <td><span class="primary-cell">11-05 周三</span><span class="sub">第 10 周</span></td>
+                      <td>钱七<span class="sub">20260005</span></td>
+                      <td>周三-二时段<span class="sub">10:15–11:55</span></td>
+                      <td><span class="badge danger">缺勤</span></td>
+                      <td class="num">0.0 h</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- 右栏 -->
+        <div class="stack">
+          <section class="panel" aria-label="快捷入口">
+            <div class="panel-header">
+              <h2>快捷入口</h2>
+            </div>
+            <div class="panel-content flush">
+              <ul class="quick-list">
+                <li><a class="quick-link" href="schedules.html"><svg class="i" aria-hidden="true"><use href="#i-check"></use></svg>登记考勤<em>24 条待登记</em></a></li>
+                <li><a class="quick-link" href="applications.html"><svg class="i" aria-hidden="true"><use href="#i-alert"></use></svg>处理申请<em>3 项</em></a></li>
+                <li><a class="quick-link" href="#"><svg class="i" aria-hidden="true"><use href="#i-clock"></use></svg>查看服务时长<em>本周 371 人次</em></a></li>
+                <li><a class="quick-link" href="#"><svg class="i" aria-hidden="true"><use href="#i-download"></use></svg>导出学期时长<em>Excel</em></a></li>
+                <li><a class="quick-link" href="#"><svg class="i" aria-hidden="true"><use href="#i-calendar"></use></svg>设置学期与日历<em>第 10 周</em></a></li>
+              </ul>
+            </div>
+          </section>
+
+          <section class="panel panel-quiet" aria-label="当前信用规则">
+            <div class="panel-header">
+              <div>
+                <h2>当前信用规则</h2>
+                <p>规则版本 v3 · 2026-09-27 生效</p>
+              </div>
+            </div>
+            <div class="panel-content">
+              <dl class="detail-list">
+                <dt>迟到扣分</dt><dd>2 分（花园岗无迟到）</dd>
+                <dt>缺勤扣分</dt><dd>3 分</dd>
+                <dt>初始 / 最低</dt><dd>5 分 / 0 分</dd>
+                <dt>归零处理</dt><dd>停用账号并取消未来排班</dd>
+              </dl>
+            </div>
+          </section>
+
+          <section class="panel" aria-label="系统状态">
+            <div class="panel-header">
+              <h2>系统状态</h2>
+            </div>
+            <div class="panel-content" style="display:grid;gap:10px">
+              <div class="notice success">
+                <svg class="i" aria-hidden="true"><use href="#i-check-circle"></use></svg>
+                <span>按周自动结算正常 · 最近成功 11-02 00:00</span>
+              </div>
+              <div class="notice">
+                <svg class="i" aria-hidden="true"><use href="#i-info"></use></svg>
+                <span>数据库连接正常 · 本机私有实例（3308）</span>
+              </div>
+              <p class="muted" style="font-size:11px;margin:0">服务已连续运行 3 天 18 小时。</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+</body>
+</html>

@@ -1,3 +1,7 @@
+# 界面升级 2.5.0（2026-11-07）
+
+本轮完成正式前端视觉升级：墨绿 / 纸白 / 浅绿 / 浅米色配色，重做登录页（墨绿主视觉 + 浅绿色表单区、字号 +1px、1366×768 一屏放下），工作台侧栏与表格同步升级，保留浅色 / 深色 / 跟随系统三态主题。除登录与密码页外，全部工作台业务页面（概览、排班、审批、时长、信用、资料、学期、征集、导入、日志等）已统一到 v2.5 版式；窄屏侧栏改为带遮罩的抽屉，宽表格自动变为「标签 + 值」卡片（`web/pages-v25.css`）。新增找回与修改密码页面 `GET /password`（`#reset` 忘记密码、`#change` 修改密码）及 `POST /auth/password/change`、`POST /auth/password/reset-request` 接口。设计依据与实施记录见 [前端设计规范 2.5.0](docs/前端设计规范_2.5.0.md)，验收见 [验证记录](docs/validation.md)。
+
 # 多业务版本 2.4.0（2026-10-26）
 
 新增咨询各分队及美育范围负责人任命、退队初审、工作日报，普通管理员可上调已结束固定时段时长；保留周结算。负责人仅继承已确认权限，不授予全局超管权限。见[负责人功能说明](docs/分队与美育负责人_2.4.0.md)。
@@ -35,11 +39,11 @@
 
 本项目使用独立的本机 MySQL 实例，不更改原有 Windows MySQL 服务。
 
-- 数据库地址：`127.0.0.1:3308`
+- 数据库地址：`127.0.0.1:3308`（可用 `VOLUNTEER_DB_PORT` 或 `--db-port` 改用其他端口）
 - 应用数据库：`volunteer_core`
 - 测试数据库：`volunteer_core_test`
-- 当前实测引擎：MySQL **5.7.44**，来自本机 `F:/mysql5/bin`
-- 数据与随机凭据：项目上一级 `.work/mysql-core/`
+- MySQL 引擎：MySQL 5.7.44 或 8.x。程序会在 PATH、各磁盘常见安装目录和 Windows 服务中自动查找 `mysqld`；`server.json` 里缓存的 bin 路径换机器后失效时，会在**同一版本族（5.7 或 8.x）**内自动重新定位，不会更换数据目录，也可用 `--mysql-bin` 显式指定
+- 数据与随机凭据：项目上一级 `.work/mysql-core/`；可用 `VOLUNTEER_HOME` 把运行数据根目录（默认即 `.work`）改到别处
 - 演示登录信息：项目上一级 `.work/demo-accounts.json`，其中包含随机密码，请本地查看
 
 **推荐双击本目录的 `start.cmd`**，或在本目录打开 PowerShell 运行：
@@ -54,13 +58,15 @@
 python .\start.py
 ```
 
-如果当前位于项目上一级目录 `D:\汇报作业\数据库`，运行 `python .\core\start.py` 即可；启动器自动使用自身所在目录，不依赖终端的当前目录。
+启动器会自动选择解释器：若当前 PATH 中的 `python` 版本过低或缺少 fastapi 等运行依赖（例如本机 PATH 默认是 pyenv 的 Python），`start.py` 会定位项目自带环境（`.conda/envs/volunteer-core`、`.venv` 等）并以该解释器重新执行自身；`start.cmd` / `start.ps1` 也按同样顺序兜底。可用环境变量 `VOLUNTEER_PYTHON` 强制指定解释器或环境目录。
 
-启动器依次检查独立 MySQL、初始化缺失的数据表和演示账号、启动 `127.0.0.1:8765` 网页服务，已有数据会保留。若本系统已经运行，会显示可访问的地址；若端口被其他程序占用，会提示原因并退出。服务启动后请保持窗口打开，按 `Ctrl+C` 可停止网页服务。双击启动失败时窗口会保留，便于查看错误。
+启动器依次检查独立 MySQL、初始化缺失的数据表和演示账号、启动 `127.0.0.1:8765` 网页服务，已有数据会保留。若本系统已经运行，会显示工作台、接口文档和密码管理地址，并在双击打开的窗口中等待按回车关闭（避免窗口一闪而过）；若端口被其他程序占用，会提示原因并退出。服务启动后请保持窗口打开，按 `Ctrl+C` 可停止网页服务。双击启动失败时窗口会保留，便于查看错误。
+
+网页服务端口默认 `8765`：如被占用，可设置 `VOLUNTEER_PORT` 或运行 `python .\start.py --port 8766`。私用 MySQL 端口默认 `3308`，可用 `VOLUNTEER_DB_PORT` 或 `--db-port` 覆盖（换端口前先停止旧实例，已有数据目录不受影响）。
 
 若之前执行 `start.ps1` 时出现“禁止运行脚本”或 `PSSecurityException`，这是 PowerShell 执行策略阻止了脚本，网页服务尚未启动，因此浏览器可能显示“拒绝连接”。改用上面的 `start.cmd` 或 `start.py` 即可，**无需更改系统执行策略或以管理员身份运行**。只查看启动参数可运行 `python .\start.py --help`，这不会启动任何服务。
 
-打开 [中文工作台](http://127.0.0.1:8765/)，选择登录身份，再填写账号和密码。工作台会显示该角色可使用的页面，无需手动复制令牌。也可以打开 [中文接口文档](http://127.0.0.1:8765/docs)，通过中文登录表单和调用表单验证接口。两种页面在同一标签页内共用登录状态；退出后清除该标签页保存的令牌。
+打开 [中文工作台](http://127.0.0.1:8765/)，选择登录身份，再填写账号和密码。工作台会显示该角色可使用的页面，无需手动复制令牌。忘记密码或需要修改密码时，可打开 [密码管理](http://127.0.0.1:8765/password)（`/password#reset` 提交重置申请，`/password#change` 登录后改密）。也可以打开 [中文接口文档](http://127.0.0.1:8765/docs)，通过中文登录表单和调用表单验证接口。两种页面在同一标签页内共用登录状态；退出后清除该标签页保存的令牌。
 
 页面脚本和样式由本机服务提供，页面加载不依赖 Swagger 或外部字体 CDN。页面文案、状态名称、表单提示和接口字段说明使用简体中文；接口路径、JSON 字段名与枚举值保留原有协议，便于程序调用。设计说明见 [界面说明](docs/interface.md)。
 
@@ -76,14 +82,16 @@ python .\start.py
 
 初始化仅向空库写入演示账号、35 个固定时段和两条信用规则（旧版示例班次保留为停用历史）。重复运行初始化会保留已有数据。正式数据与测试数据使用不同数据库。
 
-若在另一台电脑运行，先准备 MySQL 5.7.44 或 MySQL 8.x，再安装 Python 依赖：
+若在另一台电脑运行，先准备 MySQL 5.7.44 或 MySQL 8.x 与 Python 3.10 或更新版本，再安装依赖并启动：
 
 ```powershell
 python -m pip install -r requirements.txt
-python scripts/local_mysql.py start --mysql-bin '你的MySQL安装目录/bin'
+python start.py
 ```
 
-本机缺少的 PyMySQL 已安装在工作区 `.work/python-packages`；其余依赖使用本机现有 Python 环境。部署到已有数据库服务器时，可自行建立应用库并使用 SQL 文件，设置环境变量 `VOLUNTEER_DB_CONFIG` 指向包含 host、port、user、password、database 的 JSON 配置。应用账号只需要该库的 SELECT、INSERT、UPDATE、DELETE，初始化账号另外需要建表与创建触发器权限。
+`start.py` 会在需要时自动查找 MySQL bin 目录；也可以显式执行 `python scripts/local_mysql.py start --mysql-bin '你的MySQL安装目录/bin'`。运行数据默认位于项目上一级 `.work`，若该目录不可写或想放到别处，设置 `VOLUNTEER_HOME` 指向新的数据根目录（其下会创建 `mysql-core/`），已有数据不会因此被迁移或覆盖。
+
+部署到已有数据库服务器时，设置环境变量 `VOLUNTEER_DB_CONFIG` 指向包含 host、port、user、password、database 的 JSON 配置，`python -m app.bootstrap` 即可在该服务器上建库建表（该账号需要建库、建表和创建触发器权限；也可用 `VOLUNTEER_ADMIN_CONFIG` 单独指定初始化账号配置）。应用账号只需要该库的 SELECT、INSERT、UPDATE、DELETE。此类部署没有本机 `.work/mysql-core/server.json` 时，升级前备份会改用 PATH 中的 `mysqldump`；若找不到 `mysqldump`，会明确警告并跳过自动备份，请先手动备份再升级。
 
 ## 第一条演示流程
 
@@ -102,6 +110,7 @@ python scripts/local_mysql.py start --mysql-bin '你的MySQL安装目录/bin'
 | 场景 | 接口 |
 |---|---|
 | 登录、本人资料 | `POST /auth/login`、`GET /auth/me` |
+| 密码管理 | `GET /password`（页面）、`POST /auth/password/change`、`POST /auth/password/reset-request` |
 | 学生、管理员 | `POST /students`、`GET /students`、`POST /admins`、`GET /admins`；`POST /students/{id}/administrator` 授予普通管理员身份 |
 | 班次 | `POST /slots`、`GET /slots` |
 | 学期日历 | `GET/POST /semesters`、`PUT /semesters/{id}`、`PUT /semesters/{id}/calendar` |
@@ -135,17 +144,19 @@ python scripts/local_mysql.py start --mysql-bin '你的MySQL安装目录/bin'
 
 全部业务写操作在同一库名对应的 MySQL 命名锁下串行执行，并包在 InnoDB 事务中。这样在课程项目规模下，可以可靠地检查容量、冲突和当前信用分，避免并发请求重复占位或丢失更新。它会限制写入并发量，适用于当前小规模第一版；直接绕过服务层手工执行 SQL 不受这套业务锁约束。
 
-约束负责主外键、唯一性、非负数值等；服务层负责角色权限、人数上限、时间冲突和审批状态等跨表业务。参考：[MySQL 锁定读取](https://dev.mysql.com/doc/refman/8.0/en/innodb-locking-reads.html)、[MySQL CHECK 约束说明](https://dev.mysql.com/doc/refman/8.0/en/create-table-check-constraints.html)。本机已验证 5.7，8.x 兼容性尚未实测。
+约束负责主外键、唯一性、非负数值等；服务层负责角色权限、人数上限、时间冲突和审批状态等跨表业务。参考：[MySQL 锁定读取](https://dev.mysql.com/doc/refman/8.0/en/innodb-locking-reads.html)、[MySQL CHECK 约束说明](https://dev.mysql.com/doc/refman/8.0/en/create-table-check-constraints.html)。本机已验证 mysql 5.7.44 与 MySQL 8.0.46（2026-11-07 用 8.0.46 完成启动、建表、业务与完整回归实测）。
 
 ## 测试与关闭
 
+测试需使用已安装依赖的解释器（例如项目自带环境），PATH 中的 `python` 可能缺少依赖：
+
 ```powershell
-python -m unittest discover -s tests -v
+.\.conda\envs\volunteer-core\python.exe -m unittest discover -s tests -v
 ```
 
-测试使用真实 MySQL，多次重建 **volunteer_core_test**；初始化器拒绝对正式库执行 reset。测试只应对本项目隔离实例运行。真实用户数据不应放入这个测试库。
+测试使用真实 MySQL，多次重建 **volunteer_core_test**；初始化器拒绝对正式库执行 reset。测试只应对本项目隔离实例运行。真实用户数据不应放入这个测试库。若设置了 `VOLUNTEER_HOME`，先启动对应实例再运行测试。当前完整回归为 **232 项全部通过**（含 27 项前端契约与 8 项密码管理），结果见 [验证记录](docs/validation.md)。
 
-API 在前台启动时按 Ctrl+C 停止。独立数据库可以通过以下命令停止或查询状态：
+API 在前台启动时按 Ctrl+C 停止。独立数据库可以通过以下命令停止或查询状态（可用 `--port` 指定端口）：
 
 ```powershell
 python scripts/local_mysql.py status
@@ -156,7 +167,7 @@ python scripts/local_mysql.py stop
 
 当前已提供按角色区分的中文业务页面和中文接口调用页面。页面使用现有后端执行操作，权限、时间冲突、容量和事务规则仍由服务端检查。
 
-已实现考勤改判、实际扣分冲正和超管调分；普通管理员可改判本时段考勤，超管可处理全队。撤销错误缺勤会恢复该次时长和实际被扣的分数，流水与审计保留历史。超管在“信用管理”选人后可调整任何队员的信用分。尚未实现独立违规申诉流程、管理员交接、密码自助找回和自动备份。规则停用当前通过新版本替换实现，没有提供让某一违规类型完全缺少有效规则的接口。
+已实现考勤改判、实际扣分冲正和超管调分；普通管理员可改判本时段考勤，超管可处理全队。撤销错误缺勤会恢复该次时长和实际被扣的分数，流水与审计保留历史。超管在“信用管理”选人后可调整任何队员的信用分。密码管理已提供「忘记密码提交申请 + 管理员核实后重置」与「登录后修改密码」；尚未实现独立违规申诉流程、管理员交接、邮件/短信自助找回、修改密码后立即吊销旧令牌和自动备份。规则停用当前通过新版本替换实现，没有提供让某一违规类型完全缺少有效规则的接口。
 
 本机绑定回环地址。若后续对外部署，需要另行配置 HTTPS、登录限流、密钥管理和运维方案。
 

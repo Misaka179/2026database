@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>设计预览 · 登录 · 图书馆志愿服务</title>
+<link rel="stylesheet" href="preview.css">
+<script>
+  // 在首屏渲染前套用主题，避免闪白
+  try {
+    var mode = localStorage.getItem('preview-theme') || 'system';
+    var dark = mode === 'dark' ||
+      (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  } catch (error) { /* 忽略 */ }
+</script>
+<script src="preview.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#login-form">跳到登录表单</a>
+
+<main class="auth-page">
+  <!-- 左：墨绿主视觉 -->
+  <section class="auth-hero" aria-label="系统简介">
+    <p class="auth-hero-top">图书馆志愿服务管理系统</p>
+
+    <div class="auth-hero-main">
+      <div class="auth-brand">
+        <span class="auth-brand-tile"><svg class="i" aria-hidden="true"><use href="#i-book"></use></svg></span>
+        <span>
+          <strong>图书馆志愿服务</strong>
+          <small>四川大学图书馆志愿服务队</small>
+        </span>
+      </div>
+
+      <span class="auth-chip">志愿服务 · 一站式管理</span>
+
+      <h1 class="auth-headline">把每一次志愿服务，<br>安排妥当。</h1>
+      <p class="auth-lead">从排班与考勤，到请假审批、服务时长与信用记录，在同一处完成日常管理，每一步都可追溯。</p>
+
+      <div class="auth-features">
+        <div class="auth-feature">
+          <span class="auth-feature-icon"><svg class="i" aria-hidden="true"><use href="#i-calendar"></use></svg></span>
+          <span><strong>排班与考勤</strong><small>按学期日历自动生成，结束后登记出勤。</small></span>
+        </div>
+        <div class="auth-feature">
+          <span class="auth-feature-icon"><svg class="i" aria-hidden="true"><use href="#i-check"></use></svg></span>
+          <span><strong>申请与审批</strong><small>请假、长期换班和退队，进度清晰可查。</small></span>
+        </div>
+        <div class="auth-feature">
+          <span class="auth-feature-icon"><svg class="i" aria-hidden="true"><use href="#i-clock"></use></svg></span>
+          <span><strong>时长与信用</strong><small>逐笔记录，保留每次变更的依据。</small></span>
+        </div>
+        <div class="auth-feature">
+          <span class="auth-feature-icon"><svg class="i" aria-hidden="true"><use href="#i-users"></use></svg></span>
+          <span><strong>分队与负责人</strong><small>按业务与小组分工，权限范围明确。</small></span>
+        </div>
+      </div>
+
+      <div class="auth-stats" aria-label="系统概况">
+        <div class="auth-stat"><strong>335</strong><small>在册志愿者</small></div>
+        <div class="auth-stat"><strong>7,035</strong><small>累计服务小时</small></div>
+        <div class="auth-stat"><strong>35</strong><small>固定服务时段</small></div>
+      </div>
+    </div>
+
+    <p class="auth-quote">
+      <svg class="i" aria-hidden="true"><use href="#i-book"></use></svg>
+      以书为伴，以服务为荣 —— 四川大学图书馆志愿服务队
+    </p>
+  </section>
+
+  <!-- 右：浅米色表单区 -->
+  <section class="auth-panel">
+    <button class="theme-button auth-theme" type="button" data-theme-toggle>
+      <svg class="i" aria-hidden="true"><use href="#i-moon"></use></svg>
+      <span>外观：跟随系统</span>
+    </button>
+
+    <div class="auth-card">
+      <a class="auth-mobile-brand" href="index.html">
+        <span class="brand-mark"><svg class="i" aria-hidden="true"><use href="#i-book"></use></svg></span>
+        <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
+      </a>
+
+      <h2>欢迎回来</h2>
+      <p class="auth-sub">使用你的账号登录工作台。</p>
+
+      <form class="auth-form" id="login-form" novalidate>
+        <div class="auth-field">
+          <label for="login-kind">登录身份</label>
+          <div class="auth-control">
+            <svg class="i lead" aria-hidden="true"><use href="#i-users"></use></svg>
+            <select id="login-kind" name="kind">
+              <option value="admin">管理员</option>
+              <option value="student">志愿者</option>
+            </select>
+            <span class="trail"><svg class="i" aria-hidden="true"><use href="#i-chevron-down"></use></svg></span>
+          </div>
+          <p class="auth-help identity-help">可选：管理员或志愿者</p>
+        </div>
+
+        <div class="auth-field">
+          <label for="login-account">账号</label>
+          <div class="auth-control">
+            <svg class="i lead" aria-hidden="true"><use href="#i-user"></use></svg>
+            <input id="login-account" name="account" type="text" autocomplete="username"
+                   placeholder="请输入管理员账号或学号" maxlength="64">
+            <span class="trail"><svg class="i" aria-hidden="true"><use href="#i-help"></use></svg></span>
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <div class="auth-label-row">
+            <label for="login-password">密码</label>
+            <a class="auth-link" href="password.html#reset">忘记密码？</a>
+          </div>
+          <div class="auth-control">
+            <svg class="i lead" aria-hidden="true"><use href="#i-lock"></use></svg>
+            <input id="login-password" name="password" type="password"
+                   autocomplete="current-password" placeholder="请输入密码" maxlength="128">
+            <span class="trail">
+              <button class="auth-reveal" type="button" data-reveal="login-password" aria-label="显示密码">
+                <svg class="i" aria-hidden="true"><use href="#i-eye"></use></svg><span>显示</span>
+              </button>
+            </span>
+          </div>
+        </div>
+
+        <div class="auth-row">
+          <span class="auth-help">登录有效期 1 小时</span>
+          <a class="auth-link" href="password.html#reset">无法登录？联系队伍组</a>
+        </div>
+
+        <button class="auth-submit" type="submit">
+          登录工作台
+          <svg class="i" aria-hidden="true"><use href="#i-arrow-right"></use></svg>
+        </button>
+      </form>
+
+      <div class="auth-divider" style="margin-top:22px">其他操作</div>
+      <p class="auth-help" style="text-align:center;margin-top:12px">
+        <a class="auth-link" href="password.html#reset">找回密码</a>
+        <span class="muted"> · </span>
+        <a class="auth-link" href="password.html#change">修改密码</a>
+      </p>
+
+      <div class="auth-foot">
+        <span>四川大学图书馆志愿服务队</span>
+        <span class="auth-foot-right">© 2026 四川大学图书馆 · 仅限校内授权使用</span>
+      </div>
+
+      <p class="auth-help auth-preview" style="margin-top:12px;opacity:.8">设计预览：使用假数据，不会提交真实登录。</p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

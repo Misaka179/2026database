@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>前端设计规范 2.5.0 · 静态预览</title>
+<link rel="stylesheet" href="preview.css">
+<style>
+  /* 仅预览目录页使用，不属于产品组件 */
+  .gallery {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  .gallery-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 14px;
+  }
+  .gallery-head h1 {
+    font-size: 1.9rem;
+  }
+  .gallery-head p {
+    margin-top: 10px;
+    max-width: 62ch;
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    line-height: 1.9;
+  }
+  .gallery-head .eyebrow {
+    margin-bottom: 10px;
+  }
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    margin: 26px 0 10px;
+  }
+  .preview-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    text-decoration: none;
+  }
+  .preview-card:hover {
+    text-decoration: none;
+    border-color: var(--border-strong);
+    box-shadow: var(--shadow-2);
+  }
+  .preview-card:hover h3 {
+    color: var(--primary);
+  }
+  .mini {
+    position: relative;
+    height: 168px;
+    padding: 14px;
+    background: var(--bg-sunken);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .mini-bar {
+    height: 8px;
+    border-radius: 3px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    margin-bottom: 10px;
+  }
+  .mini-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .mini-box {
+    flex: 1;
+    height: 34px;
+    border-radius: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+  .mini-box.tint {
+    background: var(--primary-soft);
+    border-color: transparent;
+  }
+  .mini-box.line {
+    height: 12px;
+    border: 0;
+    background: var(--border);
+    border-radius: 3px;
+  }
+  .mini-table {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+  }
+  .mini-table .mini-box.line {
+    margin: 6px 0;
+  }
+  .mini-side {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 34%;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    box-shadow: var(--shadow-2);
+    padding: 10px;
+  }
+  .mini-phone {
+    position: absolute;
+    left: 50%;
+    top: 14px;
+    transform: translateX(-50%);
+    width: 96px;
+    height: 140px;
+    border: 2px solid var(--border-strong);
+    border-radius: 12px;
+    background: var(--surface);
+    padding: 8px 6px;
+  }
+  .mini-phone .mini-box.line {
+    height: 7px;
+    margin: 5px 0;
+  }
+  .card-body {
+    padding: 16px 18px 18px;
+  }
+  .card-body h3 {
+    font-size: var(--fs-16);
+    margin-bottom: 6px;
+  }
+  .card-body p {
+    color: var(--text-muted);
+    font-size: var(--fs-12);
+    line-height: 1.8;
+    min-height: 44px;
+  }
+  .card-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .card-tags span {
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--surface-hover);
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  .card-open {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    color: var(--primary);
+    font-size: var(--fs-12);
+    font-weight: 500;
+  }
+  .gallery-section {
+    margin-top: 42px;
+  }
+  .gallery-section > h2 {
+    font-size: var(--fs-18);
+    margin-bottom: 6px;
+  }
+  .gallery-section > p {
+    color: var(--text-muted);
+    font-size: var(--fs-12);
+    margin-bottom: 16px;
+  }
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .swatch {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .swatch-color {
+    height: 54px;
+  }
+  .swatch-meta {
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .swatch-meta strong {
+    display: block;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  .swatch-meta code {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--text-muted);
+    font-size: 10.5px;
+  }
+  .type-sample p {
+    margin: 0 0 8px;
+  }
+  .type-sample .t1 { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.01em; }
+  .type-sample .t2 { font-size: 1.125rem; font-weight: 600; }
+  .type-sample .t3 { font-size: 0.875rem; font-weight: 500; }
+  .type-sample .t4 { font-size: 0.75rem; color: var(--text-muted); }
+  .type-sample .t5 { font-size: 2.25rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .checklist {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 24px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--fs-13);
+  }
+  .checklist li {
+    display: flex;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .checklist b {
+    flex: none;
+    color: var(--primary);
+    font-weight: 600;
+    font-size: var(--fs-12);
+  }
+  .gallery-foot {
+    margin-top: 48px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: var(--fs-12);
+    line-height: 1.9;
+  }
+  @media (max-width: 860px) {
+    .gallery-grid,
+    .swatches,
+    .checklist {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .gallery-head {
+      flex-direction: column;
+    }
+  }
+</style>
+<script>
+  try {
+    var mode = localStorage.getItem('preview-theme') || 'system';
+    var dark = mode === 'dark' ||
+      (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  } catch (error) { /* 忽略 */ }
+</script>
+<script src="preview.js" defer></script>
+</head>
+<body>
+<main class="gallery" id="main">
+  <div class="gallery-head">
+    <div>
+      <p class="eyebrow">图书馆志愿服务管理系统 · 界面重设计</p>
+      <h1>设计规范 2.5.0 · 静态预览</h1>
+      <p>
+        这是「馆藏 · 纸墨」方向的静态预览：原生 HTML/CSS，零外部依赖，使用系统中文与假数据，
+        <strong>不连接正式系统、不修改任何产品代码</strong>。登录页按墨绿参照稿重做，其余工作台页面保持既有设计；
+        登录与密码页已按 1366×768 笔记本高度压缩，实测一屏放下、无需下滑。请重点看配色、排版层级、表格密度与移动端形态。
+      </p>
+    </div>
+    <button class="theme-button" type="button" data-theme-toggle>
+      <svg class="i" aria-hidden="true"><use href="#i-moon"></use></svg>
+      <span>外观：跟随系统</span>
+    </button>
+  </div>
+
+  <div class="preview-note">
+    <svg class="i" aria-hidden="true"><use href="#i-info"></use></svg>
+    <span>
+      <strong>打开方式：</strong>直接双击本页 <code>index.html</code> 即可；也可在浏览器地址栏打开同目录其他页面。
+      右上角按钮循环切换「浅色 / 深色 / 跟随系统」；窄屏或缩窄窗口可查看移动端布局；审批抽屉可按 Esc 关闭。
+    </span>
+  </div>
+
+  <div class="gallery-grid">
+    <a class="preview-card" href="login.html">
+      <div class="mini" aria-hidden="true">
+        <div class="mini-row" style="height:100%">
+          <div class="mini-box" style="flex:1.1;border:0;background:linear-gradient(135deg,#3a6b57,#1b3f33)"></div>
+          <div class="mini-box" style="flex:0.9;padding:10px;background:var(--auth-beige,#edf4ec)">
+            <div class="mini-box line" style="width:55%"></div>
+            <div class="mini-box line" style="width:100%;margin-top:8px"></div>
+            <div class="mini-box line" style="width:100%;margin-top:8px"></div>
+            <div class="mini-box" style="height:16px;margin-top:12px;border:0;background:linear-gradient(135deg,#3f7359,#2d5b4b);border-radius:4px"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>登录页（v2）</h3>
+        <p>墨绿主视觉 + 浅绿色表单区；左栏 4 条功能纵向 4 行（图标 + 标题 + 说明），移动端收起主视觉只留品牌与表单。</p>
+        <div class="card-tags"><span>P0</span><span>参照稿配色</span><span>字号 +1px</span></div>
+        <div class="card-open"><span>打开登录页</span><span>→</span></div>
+      </div>
+    </a>
+
+    <a class="preview-card" href="overview.html">
+      <div class="mini" aria-hidden="true">
+        <div class="mini-bar" style="width:40%"></div>
+        <div class="mini-row">
+          <div class="mini-box"></div><div class="mini-box"></div>
+          <div class="mini-box"></div><div class="mini-box tint"></div>
+        </div>
+        <div class="mini-row" style="gap:8px">
+          <div class="mini-table" style="flex:1.7"><div class="mini-box line"></div><div class="mini-box line"></div><div class="mini-box line" style="width:70%"></div></div>
+          <div class="mini-table" style="flex:1"><div class="mini-box line"></div><div class="mini-box line" style="width:80%"></div><div class="mini-box line"></div></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>工作概览</h3>
+        <p>四个指标卡回答「今天要处理什么」，左侧待办与最近安排，右侧快捷入口与规则摘要。</p>
+        <div class="card-tags"><span>P1</span><span>信息层级</span><span>待办中心</span></div>
+        <div class="card-open"><span>打开概览页</span><span>→</span></div>
+      </div>
+    </a>
+
+    <a class="preview-card" href="schedules.html">
+      <div class="mini" aria-hidden="true">
+        <div class="mini-bar" style="width:30%"></div>
+        <div class="mini-row">
+          <div class="mini-box line" style="flex:0 0 26%"></div>
+          <div class="mini-box line" style="flex:0 0 26%"></div>
+          <div class="mini-box line" style="flex:0 0 30%"></div>
+        </div>
+        <div class="mini-table">
+          <div class="mini-box line"></div><div class="mini-box line"></div>
+          <div class="mini-box line"></div><div class="mini-box line"></div>
+          <div class="mini-box line" style="width:60%"></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>排班与考勤</h3>
+        <p>最典型的数据列表页：页头动作、工具栏筛选、状态标签页、吸顶表与分页，状态用徽章三重编码。</p>
+        <div class="card-tags"><span>P2</span><span>高密度表格</span><span>移动端卡片化</span></div>
+        <div class="card-open"><span>打开列表页</span><span>→</span></div>
+      </div>
+    </a>
+
+    <a class="preview-card" href="applications.html">
+      <div class="mini" aria-hidden="true">
+        <div class="mini-bar" style="width:30%"></div>
+        <div class="mini-table">
+          <div class="mini-box line"></div><div class="mini-box line"></div>
+          <div class="mini-box line"></div><div class="mini-box line" style="width:70%"></div>
+        </div>
+        <div class="mini-side">
+          <div class="mini-box line" style="width:70%"></div>
+          <div class="mini-box line"></div><div class="mini-box line"></div>
+          <div class="mini-box line" style="width:80%"></div>
+          <div class="mini-box tint" style="height:16px;margin-top:12px;border:0"></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>申请与审批</h3>
+        <p>列表 + 右侧抽屉的审批模式：详情、证明、意见与结果按钮在一屏内完成，移动端自动全屏。</p>
+        <div class="card-tags"><span>P3</span><span>右侧抽屉</span><span>审批闭环</span></div>
+        <div class="card-open"><span>打开审批页</span><span>→</span></div>
+      </div>
+    </a>
+
+    <a class="preview-card" href="password.html#reset">
+      <div class="mini" aria-hidden="true" style="display:grid;place-items:center">
+        <div class="mini-table" style="width:78%;background:var(--surface)">
+          <div class="mini-box line" style="width:48%"></div>
+          <div class="mini-box line" style="width:100%;margin-top:8px"></div>
+          <div class="mini-box line" style="width:100%;margin-top:8px"></div>
+          <div class="mini-box tint" style="height:16px;margin-top:12px;border:0"></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>找回 / 修改密码</h3>
+        <p>一页两路由：<code>#reset</code> 忘记密码（提交重置申请）、<code>#change</code> 登录后修改密码；登录页与侧栏均有入口。</p>
+        <div class="card-tags"><span>P0a</span><span>路由 #reset / #change</span><span>账号安全</span></div>
+        <div class="card-open"><span>打开密码页</span><span>→</span></div>
+      </div>
+    </a>
+
+    <a class="preview-card" href="mobile.html">
+      <div class="mini" aria-hidden="true">
+        <div class="mini-phone">
+          <div class="mini-box line" style="width:70%"></div>
+          <div class="mini-box line"></div>
+          <div class="mini-box line" style="width:85%"></div>
+          <div class="mini-box tint" style="height:22px;margin-top:10px;border:0"></div>
+          <div class="mini-box line" style="width:60%"></div>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>移动端对照</h3>
+        <p>390 × 844 视口下的登录、概览与列表；宽表格自动变为「标签 + 值」卡片，操作按钮保持 44px 触摸区。</p>
+        <div class="card-tags"><span>响应式</span><span>卡片化表格</span><span>触屏</span></div>
+        <div class="card-open"><span>打开移动端对照</span><span>→</span></div>
+      </div>
+    </a>
+
+    <a class="preview-card" href="../前端设计规范_2.5.0.md">
+      <div class="mini" aria-hidden="true" style="display:grid;place-items:center">
+        <div style="text-align:center;color:var(--text-muted)">
+          <svg class="i" aria-hidden="true" style="width:34px;height:34px;color:var(--primary);opacity:.5"><use href="#i-file"></use></svg>
+          <p style="font-size:11px;margin-top:8px">Markdown 设计规范（1022 行）</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>完整设计规范</h3>
+        <p>配色令牌、组件规格、10 类页面原型、响应式与可访问性、实施计划与契约冻结清单。</p>
+        <div class="card-tags"><span>审计稿</span><span>实现依据</span></div>
+        <div class="card-open"><span>打开规范文档</span><span>→</span></div>
+      </div>
+    </a>
+
+    <a class="preview-card" href="screens/03-overview-light.png">
+      <div class="mini" aria-hidden="true" style="display:grid;place-items:center">
+        <div style="text-align:center;color:var(--text-muted)">
+          <svg class="i" aria-hidden="true" style="width:34px;height:34px;color:var(--primary);opacity:.6"><use href="#i-image"></use></svg>
+          <p style="font-size:11px;margin-top:8px">screens/ · 15 张截图（含 1366×768 适配验证）</p>
+        </div>
+      </div>
+      <div class="card-body">
+        <h3>预渲染截图</h3>
+        <p>登录、概览、列表、审批、深色模式与移动端对照的 PNG，可直接放进汇报 PPT 或评审材料。</p>
+        <div class="card-tags"><span>截图</span><span>浅色 / 深色</span></div>
+        <div class="card-open"><span>查看概览截图</span><span>→</span></div>
+      </div>
+    </a>
+  </div>
+
+  <section class="gallery-section">
+    <h2>核心配色</h2>
+    <p>纸白底 + 墨色字 + 馆藏绿主色 + 书脊铜强调；状态色只用于状态。全部文字对比度 ≥ 4.85:1（WCAG AA）。</p>
+    <div class="swatches">
+      <div class="swatch"><div class="swatch-color" style="background:#f7f6f1"></div><div class="swatch-meta"><strong>纸白 · 页面底</strong><code>#F7F6F1</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#ffffff"></div><div class="swatch-meta"><strong>卡片白</strong><code>#FFFFFF</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#1c2723"></div><div class="swatch-meta"><strong>墨色 · 正文</strong><code>#1C2723</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#2d5b4b"></div><div class="swatch-meta"><strong>馆藏绿 · 主色</strong><code>#2D5B4B</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#e6eee9"></div><div class="swatch-meta"><strong>主色浅底 · 激活</strong><code>#E6EEE9</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#a9762f"></div><div class="swatch-meta"><strong>书脊铜 · 强调</strong><code>#A9762F</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#a23a31"></div><div class="swatch-meta"><strong>危险 · 缺勤/驳回</strong><code>#A23A31</code></div></div>
+      <div class="swatch"><div class="swatch-color" style="background:#2f6b4f"></div><div class="swatch-meta"><strong>成功 · 已结算</strong><code>#2F6B4F</code></div></div>
+    </div>
+  </section>
+
+  <section class="gallery-section">
+    <h2>排版层级</h2>
+    <p>系统中文（PingFang / 微软雅黑 / Noto），基准 14px；数字统一等宽数字（tabular-nums）。</p>
+    <div class="type-sample">
+      <p class="t1">排班与考勤（28 / 600）</p>
+      <p class="t2">待办事项（18 / 600）</p>
+      <p class="t3">张三 · 周五-一时段（14 / 500）</p>
+      <p class="t4">第 10 周 · 已结算 347 人次（12 / 400，辅助）</p>
+      <p class="t5" style="color:var(--accent-text)">7,035.0 小时（36 / 600，累计强调）</p>
+    </div>
+  </section>
+
+  <section class="gallery-section">
+    <h2>本次审计需要你确认</h2>
+    <p>预览满意后，回复这 8 个选择即可开始前端代码；也可以直接说「按推荐执行」。</p>
+    <ul class="checklist">
+      <li><b>Q1</b><span>主色：馆藏深绿 <code>#2D5B4B</code>（推荐）还是学院蓝？</span></li>
+      <li><b>Q2</b><span>视觉强度：克制升级（推荐）还是大幅改版？</span></li>
+      <li><b>Q3</b><span>详情交互：右侧抽屉（推荐）还是居中对话框？</span></li>
+      <li><b>Q4</b><span>图标：内联 SVG 线性图标（推荐）还是保留字符符号？</span></li>
+      <li><b>Q5</b><span>移动端表格：6 个高频页卡片化（推荐）还是全部横向滚动？</span></li>
+      <li><b>Q6</b><span>分页：客户端分页 20 条/页（推荐）还是不分页？</span></li>
+      <li><b>Q7</b><span>CSS 组织：app.css 单文件分区（推荐）还是拆 4 文件？</span></li>
+      <li><b>Q8</b><span>主题：浅色/深色/跟随系统三态（推荐）还是只做浅色？</span></li>
+    </ul>
+  </section>
+
+  <p class="gallery-foot">
+    预览文件位于 <code>2026database/docs/preview/</code>，纯静态、无接口请求、无第三方依赖；
+    正式前端代码尚未开始编写（<code>web/</code> 目录零改动）。设计说明见
+    <a href="../前端设计规范_2.5.0.md">前端设计规范 2.5.0</a>。
+  </p>
+</main>
+</body>
+</html>
