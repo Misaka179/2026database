@@ -4,7 +4,6 @@ import logging
 import asyncio
 import os
 from contextlib import asynccontextmanager, suppress
-from pathlib import Path
 from urllib.parse import quote
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, Response
@@ -15,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ConfigDict
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from .db import pymysql
+from .paths import TEMPLATES_ROOT, WEB_ROOT
 from .security import issue_token, read_token
 from .service import Service, DomainError
 from .localization import chinese_openapi, validation_errors
@@ -50,7 +50,6 @@ app=FastAPI(title='图书馆志愿服务管理核心 API',version='2.4.0',lifesp
     docs_url=None,redoc_url=None)
 bearer=HTTPBearer(auto_error=False,scheme_name='登录凭证',description='登录后获得的访问令牌，用于确认当前用户身份。')
 log=logging.getLogger(__name__)
-WEB_ROOT=Path(__file__).resolve().parents[1] / 'web'
 app.mount('/static',StaticFiles(directory=WEB_ROOT,check_dir=False),name='static')
 
 
@@ -148,6 +147,19 @@ class Login(Model):
 class PasswordReset(Model):
     new_password:str=Field(min_length=8,max_length=128)
     reason:str=Field(min_length=1,max_length=500)
+
+
+class PasswordChange(Model):
+    current_password:str=Field(min_length=1,max_length=128)
+    new_password:str=Field(min_length=8,max_length=128)
+
+
+class PasswordResetRequest(Model):
+    kind:Literal['admin','student']
+    account:str=Field(min_length=1,max_length=64)
+    name:str=Field(min_length=1,max_length=64)
+    phone:str=Field(default='',max_length=20)
+    reason:str=Field(default='',max_length=500)
 
 
 class StudentCreate(Model):
@@ -287,6 +299,11 @@ def legacy_documentation():
     return RedirectResponse('/docs')
 
 
+@app.get('/password',include_in_schema=False)
+def password_page():
+    return FileResponse(WEB_ROOT / 'password.html',media_type='text/html',headers={'Cache-Control':'no-cache'})
+
+
 @app.get('/health',tags=['状态'])
 def health(service:S):
     with service.db.transaction() as c:
@@ -303,6 +320,16 @@ def login(body:Login,service:S):
 @app.get('/auth/me',tags=['登录'])
 def me(actor:A,service:S):
     return service.me(actor)
+
+
+@app.post('/auth/password/change',tags=['登录'])
+def change_password(body:PasswordChange,actor:A,service:S):
+    return service.change_password(actor,**body.model_dump())
+
+
+@app.post('/auth/password/reset-request',tags=['登录'])
+def request_password_reset(body:PasswordResetRequest,service:S):
+    return service.request_password_reset(**body.model_dump())
 
 
 @app.post('/students',tags=['基础资料'])
@@ -852,7 +879,7 @@ def specialty_import(body:SpecialtyImport,actor:A,service:S):
 @app.get('/specialty-imports/template',tags=['专项导入'])
 def specialty_template(actor:A,service:S):
     with service.db.transaction() as c:service.actor(c,actor,('SUPER',))
-    return FileResponse(WEB_ROOT.parent/'templates'/'专项时长导入模板.xlsx',filename='specialty-hours-template.xlsx',headers={'Cache-Control':'no-store'})
+    return FileResponse(TEMPLATES_ROOT/'专项时长导入模板.xlsx',filename='specialty-hours-template.xlsx',headers={'Cache-Control':'no-store'})
 
 
 @app.post('/business-events',tags=['业务管理'])

@@ -143,6 +143,73 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
                 'name':target['name'],'student_id':student_id},reason=reason)
             return {'status':'UPDATED','linked_student_id':student_id}
 
+    def change_password(self, actor, current_password, new_password):
+        """Self-service password change for a logged-in student or administrator."""
+        with self.db.transaction(True) as c:
+            # Students keep read access after leaving, so match the login rule:
+            # student status is not re-checked, while a disabled admin is refused.
+            # Every role may manage its own password, including scoped LEAD accounts.
+            a=self.actor(c,actor,('STUDENT','SUPER','NORMAL','LEAD'))
+            linked_id=(a.get('student_id') or a.get('leader_student_id')) if a['_kind']=='admin' else None
+            actual=one(c,'SELECT password_hash FROM student WHERE student_id=%s',(linked_id,)) if linked_id else a
+            require(actual and verify_password(current_password,actual['password_hash']),'当前密码不正确',401)
+            require(isinstance(new_password,str) and 8<=len(new_password)<=128,
+                    '密码长度必须为 8 至 128 个字符',422)
+            encoded=hash_password(new_password)
+            if a['_kind']=='student':
+                c.execute('UPDATE student SET password_hash=%s WHERE student_id=%s',(encoded,a['_id']))
+                # operation_log.admin_id is a required foreign key, so a student
+                # cannot be recorded there; leave a trace in the SUPER inbox instead.
+                self._notice(c,self._super_recipients(c),
+                    f'password-change:student:{a["_id"]}:{self.clock().strftime("%Y%m%d%H%M%S")}',
+                    'ACCOUNT','账号密码已修改',
+                    f'学号 {a["_id"]} 于 {self.clock().strftime("%Y-%m-%d %H:%M")} 在线修改了密码。',
+                    'basics',a['_id'])
+                return {'status':'UPDATED'}
+            # Administrators may share the password with a linked volunteer, as in reset_password().
+            if linked_id:
+                require(one(c,'SELECT student_id FROM student WHERE student_id=%s FOR UPDATE',(linked_id,)),
+                        '关联队员不存在',404)
+                c.execute('UPDATE student SET password_hash=%s WHERE student_id=%s',(encoded,linked_id))
+                c.execute('UPDATE admin SET password_hash=%s WHERE student_id=%s',(encoded,linked_id))
+            c.execute('UPDATE admin SET password_hash=%s WHERE admin_id=%s',(encoded,a['_id']))
+            self.audit(c,a['_id'],'CHANGE_PASSWORD','admin',a['_id'],
+                       after={'account':a.get('account'),'student_id':linked_id},reason='本人在线修改密码')
+            return {'status':'UPDATED'}
+
+    def request_password_reset(self, kind, account, name, phone='', reason=''):
+        """Accept a public reset request; only a matching account notifies SUPERs."""
+        require(kind in ('student','admin'),'账号类型无效',422)
+        def bounded(value,label,limit,required=False):
+            require(isinstance(value,str),f'{label}格式不符合要求',422)
+            value=value.strip()
+            if required:
+                require(value,f'{label}不能为空',422)
+            require(len(value)<=limit,f'{label}不能超过 {limit} 个字符',422)
+            return value
+        account=bounded(account,'账号',64,True)
+        name=bounded(name,'姓名',64,True)
+        phone=bounded(phone,'手机号',20)
+        reason=bounded(reason,'说明',500)
+        table,key=('student','student_id') if kind=='student' else ('admin','account')
+        with self.db.transaction() as c:
+            row=one(c,f'SELECT * FROM {table} WHERE {key}=%s',(account,))
+        # The same "accepted" answer is returned for unknown or mismatched accounts,
+        # so the public endpoint cannot be used to enumerate accounts.
+        if not row or row['name'].strip()!=name:
+            return {'status':'ACCEPTED'}
+        now=self.clock()
+        label='学生' if kind=='student' else '管理员'
+        message=(f'账号类型：{label}（{kind}）；账号：{account}；姓名：{row["name"]}；'
+                 f'手机号：{phone or "未填写"}；说明：{reason or "未填写"}；'
+                 f'申请时间：{now.strftime("%Y-%m-%d %H:%M")}')
+        with self.db.transaction(True) as c:
+            # One notice per account per calendar day; INSERT IGNORE on the event key dedups.
+            self._notice(c,self._super_recipients(c),
+                         f'password-reset:{kind}:{account}:{now.date().isoformat()}',
+                         'ACCOUNT','密码重置申请',message,'basics',account)
+        return {'status':'ACCEPTED'}
+
     def create_student(self, actor, student_id, name, password, college='', phone=''):
         require(student_id and len(student_id)<=32 and name.strip(), '学号和姓名不能为空', 422)
         encoded = hash_password(password)

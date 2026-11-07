@@ -448,7 +448,10 @@ class CoreIntegrationTests(unittest.TestCase):
         old,target=self.fixed_pair()
         tid=self.service.apply_fixed_transfer(self.student,old,target,'长期调整')['transfer_id']
         self.service.approve_transfer(self.normal,tid,'first',True)
-        self.service.set_memberships(self.super,self.student['id'],[old,target])
+        # 2.4.0 起咨询服务队员不能新增跨分队归属，而本用例只需要验证终审复核
+        # “目标时段已有归属”，因此跳过归属校验，直接构造历史跨队名单。
+        with patch.object(self.service,'_validate_memberships'):
+            self.service.set_memberships(self.super,self.student['id'],[old,target])
         self.assert_domain(lambda:self.service.approve_transfer(self.super,tid,'final',True))
         self.assertEqual(self.query_one('SELECT final_status FROM transfer_application WHERE transfer_id=%s',(tid,))['final_status'],'PENDING')
 

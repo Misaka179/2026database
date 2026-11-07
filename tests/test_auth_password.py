@@ -1,0 +1,234 @@
+"""HTTP tests for self-service password change and reset requests.
+
+Run with the other tests using unittest's serial discovery. This module resets
+the disposable volunteer_core_test database, so do not run it concurrently with
+another test process. No main-database data is modified.
+"""
+from __future__ import annotations
+
+from datetime import datetime
+import json
+import os
+from pathlib import Path
+import sys
+import unittest
+from unittest.mock import patch
+
+os.environ['VOLUNTEER_DISABLE_SCHEDULER'] = '1'
+
+CORE = Path(__file__).resolve().parents[1]
+WORKSPACE = CORE.parent
+sys.path.insert(0, str(CORE))
+sys.path.insert(0, str(WORKSPACE / ".work" / "python-packages"))
+
+from fastapi.testclient import TestClient
+from app.api import app, get_service
+from app.bootstrap import initialize_database
+from app.db import Database, all_rows
+from app.fixed_slots import migrate
+from app.paths import WEB_ROOT
+from app.service import Service
+
+OLD_PASSWORD = 'TestPassword123!'
+CHANGE = '/auth/password/change'
+RESET_REQUEST = '/auth/password/reset-request'
+
+
+class AuthPasswordTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        state = WORKSPACE / ".work" / "mysql-core"
+        cls.admin_settings = json.loads((state / "admin.json").read_text(encoding="utf-8"))
+        runtime = json.loads((state / "runtime.json").read_text(encoding="utf-8"))
+        cls.runtime_settings = {**runtime, "database": "volunteer_core_test"}
+
+    def setUp(self):
+        self.seed = initialize_database(
+            self.admin_settings, database="volunteer_core_test", demo=True, reset=True
+        )
+        # Install the additive tables (inbox_notice and friends) as the API server would.
+        migrate({**self.admin_settings, "database": "volunteer_core_test"})
+        self.service = Service(
+            Database(self.runtime_settings), clock=lambda: datetime(2030, 1, 1, 0, 0)
+        )
+        environment = patch.dict(
+            os.environ,
+            {"VOLUNTEER_TOKEN_SECRET": "auth-password-test-only-fixed-key-not-for-production"},
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
+        original_overrides = dict(app.dependency_overrides)
+        self.addCleanup(self.restore_overrides, original_overrides)
+        app.dependency_overrides[get_service] = lambda: self.service
+        self.client = TestClient(app)
+        self.addCleanup(self.client.close)
+
+    @staticmethod
+    def restore_overrides(original):
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original)
+
+    def check(self, response, status=200):
+        self.assertEqual(response.status_code, status, response.text)
+        return response.json()
+
+    def login(self, kind, account, password=OLD_PASSWORD):
+        return self.client.post("/auth/login", json={"kind": kind, "account": account,
+                                                     "password": password})
+
+    def headers(self, kind, account, password=OLD_PASSWORD):
+        result = self.check(self.login(kind, account, password))
+        return {"Authorization": "Bearer " + result["access_token"]}
+
+    def rows(self, sql, args=()):
+        with self.service.db.transaction() as c:
+            return list(all_rows(c, sql, args))
+
+    def test_change_password_requires_login_and_validates(self):
+        valid = {"current_password": OLD_PASSWORD, "new_password": "New-Student-2026!"}
+        self.check(self.client.post(CHANGE, json=valid), 401)
+        headers = self.headers("student", "20260001")
+        wrong = self.check(self.client.post(CHANGE, headers=headers, json={
+            "current_password": "Wrong-Password!", "new_password": "New-Student-2026!"}), 401)
+        self.assertEqual(wrong["detail"], "当前密码不正确")
+        for invalid in ({**valid, "new_password": "short"},
+                        {**valid, "new_password": "x" * 129},
+                        {**valid, "current_password": ""},
+                        {**valid, "role": "SUPER"}):
+            with self.subTest(body=invalid):
+                self.check(self.client.post(CHANGE, headers=headers, json=invalid), 422)
+        # Failed attempts must not change the stored hash.
+        self.check(self.login("student", "20260001"), 200)
+        self.assertEqual(self.rows("SELECT * FROM operation_log WHERE operation_type='CHANGE_PASSWORD'"), [])
+
+    def test_student_change_password_updates_login_and_notifies_super_only(self):
+        headers = self.headers("student", "20260001")
+        new_password = "New-Student-2026!"
+        result = self.check(self.client.post(CHANGE, headers=headers, json={
+            "current_password": OLD_PASSWORD, "new_password": new_password}))
+        self.assertEqual(result, {"status": "UPDATED"})
+        self.assertEqual(self.login("student", "20260001").status_code, 401)
+        self.check(self.login("student", "20260001", new_password), 200)
+        # A student cannot be the operation_log.admin_id foreign key: no audit row.
+        self.assertEqual(self.rows("SELECT * FROM operation_log WHERE operation_type='CHANGE_PASSWORD'"), [])
+        notices = self.service.inbox(self.seed["super"])["items"]
+        changed = [n for n in notices if n["title"] == "账号密码已修改"]
+        self.assertEqual(len(changed), 1)
+        self.assertEqual(changed[0]["target_page"], "basics")
+        self.assertIn("20260001", changed[0]["message"])
+        self.assertIn("2030-01-01", changed[0]["message"])
+        # Only SUPER accounts are notified.
+        self.assertFalse([n for n in self.service.inbox(self.seed["normal"])["items"]
+                          if n["title"] == "账号密码已修改"])
+
+    def test_admin_change_password_syncs_linked_student_and_keeps_independent_admin(self):
+        self.service.promote_student(self.seed["super"], "20260001", "测试关联身份", [])
+        linked = self.rows("SELECT admin_id FROM admin WHERE student_id=%s", ("20260001",))
+        self.assertEqual(len(linked), 1)
+        linked_headers = self.headers("admin", "20260001")
+        linked_password = "Linked-Admin-2026!"
+        self.check(self.client.post(CHANGE, headers=linked_headers, json={
+            "current_password": OLD_PASSWORD, "new_password": linked_password}))
+        # The linked volunteer and administrator accounts share one password.
+        for kind in ("student", "admin"):
+            self.assertEqual(self.login(kind, "20260001").status_code, 401)
+            self.check(self.login(kind, "20260001", linked_password), 200)
+        # An administrator without a linked volunteer only changes its own row.
+        independent_headers = self.headers("admin", "admin1")
+        self.check(self.client.post(CHANGE, headers=independent_headers, json={
+            "current_password": OLD_PASSWORD, "new_password": "Independent-2026!"}))
+        self.check(self.login("admin", "admin1", "Independent-2026!"), 200)
+        self.assertEqual(self.login("admin", "admin1").status_code, 401)
+        self.check(self.login("admin", "super"), 200)
+        logs = self.rows("SELECT * FROM operation_log WHERE operation_type='CHANGE_PASSWORD'")
+        self.assertEqual(len(logs), 2)
+        self.assertTrue(all(row["reason"] == "本人在线修改密码" for row in logs))
+        self.assertNotIn("pbkdf2", json.dumps(logs, default=str))
+
+    def test_lead_administrator_shares_the_linked_volunteer_password(self):
+        student_hash = self.rows("SELECT password_hash FROM student WHERE student_id=%s",
+                                 ("20260002",))[0]["password_hash"]
+        with self.service.db.transaction(True) as c:
+            c.execute("INSERT INTO admin(name,account,password_hash,role,leader_student_id) "
+                      "VALUES(%s,%s,%s,'LEAD',%s)",
+                      ("美育负责人", "lead1", student_hash, "20260002"))
+        headers = self.headers("admin", "lead1")
+        new_password = "Lead-Password-2026!"
+        self.check(self.client.post(CHANGE, headers=headers, json={
+            "current_password": OLD_PASSWORD, "new_password": new_password}))
+        self.assertEqual(self.login("admin", "lead1").status_code, 401)
+        self.check(self.login("admin", "lead1", new_password), 200)
+        self.assertEqual(self.login("student", "20260002").status_code, 401)
+        self.check(self.login("student", "20260002", new_password), 200)
+
+    def test_disabled_admin_cannot_change_password_with_old_token(self):
+        headers = self.headers("admin", "admin1")
+        with self.service.db.transaction(True) as c:
+            c.execute("UPDATE admin SET status='DISABLED' WHERE account=%s", ("admin1",))
+        denied = self.check(self.client.post(CHANGE, headers=headers, json={
+            "current_password": OLD_PASSWORD, "new_password": "Disabled-Admin-2026!"}), 403)
+        self.assertIn("停用", denied["detail"])
+
+    def test_reset_request_accepts_without_enumeration_and_notifies_super(self):
+        valid = {"kind": "student", "account": "20260001", "name": "张三",
+                 "phone": "13800000000", "reason": "忘记密码"}
+        accepted = {"status": "ACCEPTED"}
+        self.assertEqual(self.check(self.client.post(RESET_REQUEST, json=valid)), accepted)
+        # Mismatched name, unknown account and unknown kind all look identical to a caller.
+        self.assertEqual(self.check(self.client.post(RESET_REQUEST, json={**valid, "name": "王五"})), accepted)
+        self.assertEqual(self.check(self.client.post(RESET_REQUEST, json={**valid, "account": "20990000"})), accepted)
+        notices = [row for row in self.rows("SELECT * FROM inbox_notice")
+                   if row["event_key"].startswith("password-reset:")]
+        self.assertEqual(len(notices), 1)
+        notice = notices[0]
+        self.assertEqual(notice["event_key"], "password-reset:student:20260001:2030-01-01")
+        self.assertEqual(notice["recipient_kind"], "admin")
+        self.assertEqual(str(notice["recipient_id"]), str(self.seed["super"]["id"]))
+        self.assertEqual(notice["category"], "ACCOUNT")
+        self.assertEqual(notice["title"], "密码重置申请")
+        self.assertEqual(notice["target_page"], "basics")
+        self.assertEqual(notice["target_id"], "20260001")
+        for text in ("student", "20260001", "张三", "13800000000", "忘记密码"):
+            self.assertIn(text, notice["message"])
+        # Repeating the same request on the same day is deduplicated, never duplicated.
+        self.check(self.client.post(RESET_REQUEST, json=valid))
+        self.assertEqual(len([row for row in self.rows("SELECT * FROM inbox_notice")
+                              if row["event_key"].startswith("password-reset:")]), 1)
+        # An administrator account can request a reset too.
+        self.check(self.client.post(RESET_REQUEST, json={
+            "kind": "admin", "account": "super", "name": "超级管理员"}))
+        keys = [row["event_key"] for row in self.rows("SELECT * FROM inbox_notice")
+                if row["event_key"].startswith("password-reset:")]
+        self.assertEqual(sorted(keys), ["password-reset:admin:super:2030-01-01",
+                                        "password-reset:student:20260001:2030-01-01"])
+        # A public request must not write the audit table.
+        self.assertEqual(self.rows("SELECT * FROM operation_log"), [])
+
+    def test_reset_request_rejects_invalid_lengths_and_kinds(self):
+        valid = {"kind": "student", "account": "20260001", "name": "张三"}
+        for invalid in ({**valid, "kind": "teacher"},
+                        {"kind": "student", "account": "20260001"},
+                        {**valid, "account": "x" * 65},
+                        {**valid, "name": "名" * 65},
+                        {**valid, "phone": "1" * 21},
+                        {**valid, "reason": "说" * 501},
+                        {**valid, "role": "SUPER"}):
+            with self.subTest(body=invalid):
+                self.check(self.client.post(RESET_REQUEST, json=invalid), 422)
+        self.assertEqual(self.rows("SELECT * FROM inbox_notice"), [])
+
+    @unittest.skipUnless((WEB_ROOT / "password.html").exists(),
+                         "web/password.html 由前端提供，尚未创建")
+    def test_password_page_serves_html_without_cache(self):
+        response = self.client.get("/password")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response.headers["content-type"])
+        self.assertEqual(response.headers.get("cache-control"), "no-cache")
+        schema = self.client.get("/openapi.json").json()
+        self.assertNotIn("/password", schema["paths"])
+        for path in (CHANGE, RESET_REQUEST):
+            self.assertIn(path, schema["paths"])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

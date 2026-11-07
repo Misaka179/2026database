@@ -93,7 +93,7 @@ class FixedRosterTests(unittest.TestCase):
         self.assertEqual(self.s.students(self.normal,'20260002'),[])
 
     def test_import_previews_then_adds_accounts_once_without_overwriting(self):
-        data=fixture([['导入甲','00123',None,'一分队一时段'],['导入甲','00123',None,'二分队一时段']])
+        data=fixture([['导入甲','00123',None,'一分队一时段'],['导入甲','00123',None,'一分队二时段']])
         preview=self.s.import_roster(self.super,data)
         self.assertEqual(preview['new_students'],1)
         self.assertEqual(self.s.students(self.super,'00123'),[])

@@ -1,13 +1,15 @@
 """Explicit schema setup. Normal API credentials have no DDL privileges."""
 import argparse
 import json
+import os
 import re
 import secrets
+import sys
 from pathlib import Path
-from .db import Database, ROOT, one
+from .db import Database, one
+from .paths import ADMIN_CONFIG, CORE, DEMO_ACCOUNTS
 from .security import hash_password
 
-CORE = Path(__file__).resolve().parents[1]
 _test_hash = None
 
 
@@ -60,7 +62,9 @@ def initialize_database(settings, database='volunteer_core', demo=True, reset=Fa
             tables=[]
         if not tables:
             for filename in ('schema.sql','constraints.sql'):
-                for stmt in statements((CORE/'sql'/filename).read_text(encoding='utf-8')):
+                # utf-8-sig tolerates a BOM if the SQL file was re-saved on Windows.
+                # CORE stays a module-level name so callers/tests can redirect the SQL dir.
+                for stmt in statements((CORE/'sql'/filename).read_text(encoding='utf-8-sig')):
                     c.execute(stmt)
         elif not {'student','admin','service_slot','schedule','attendance','service_record','credit_log','operation_log'}.issubset({next(iter(t.values())) for t in tables}):
             raise RuntimeError('Existing schema is incomplete; refusing to overwrite it')
@@ -75,7 +79,8 @@ def initialize_database(settings, database='volunteer_core', demo=True, reset=Fa
         if database=='volunteer_core':
             # Persist access details before committing accounts, so a filesystem
             # failure cannot leave initialized demo accounts with unknown passwords.
-            (ROOT/'.work/demo-accounts.json').write_text(json.dumps({'note':'仅用于本机课程演示；真实部署前更换密码',
+            DEMO_ACCOUNTS.parent.mkdir(parents=True, exist_ok=True)
+            DEMO_ACCOUNTS.write_text(json.dumps({'note':'仅用于本机课程演示；真实部署前更换密码',
                 'password':password,'accounts':{'admin':['super','admin1','admin2'],'student':['20260001','20260002']}},ensure_ascii=False,indent=2),encoding='utf-8')
         if database.endswith('_test'):
             if _test_hash is None:
@@ -102,11 +107,40 @@ def initialize_database(settings, database='volunteer_core', demo=True, reset=Fa
     return demo_data
 
 
+def admin_config_path(explicit):
+    """Resolve the JSON config that supplies DDL-capable credentials.
+
+    Precedence: --config, VOLUNTEER_ADMIN_CONFIG, VOLUNTEER_DB_CONFIG, then the
+    private instance's admin.json. The last two let an external MySQL deployment
+    work without a local ``.work/mysql-core`` directory.
+    """
+    if explicit is not None:
+        return Path(explicit).expanduser()
+    for variable in ('VOLUNTEER_ADMIN_CONFIG', 'VOLUNTEER_DB_CONFIG'):
+        value = os.environ.get(variable, '').strip()
+        if value:
+            return Path(value).expanduser()
+    return ADMIN_CONFIG
+
+
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description='Initialize the dedicated volunteer database')
-    parser.add_argument('--config',type=Path,default=ROOT/'.work/mysql-core/admin.json')
+    parser.add_argument('--config',type=Path,default=None,
+        help='含初始化账号（需要建库/建表/建触发器权限）的 JSON；默认取 '
+             'VOLUNTEER_ADMIN_CONFIG、VOLUNTEER_DB_CONFIG 或 .work/mysql-core/admin.json')
     args=parser.parse_args()
-    result=initialize_database(json.loads(args.config.read_text(encoding='utf-8')))
+    config_path=admin_config_path(args.config)
+    if not config_path.is_file():
+        print(f'初始化失败：未找到数据库配置 {config_path}。本机运行请先执行 '
+              'python scripts/local_mysql.py start；使用外部数据库请设置 '
+              'VOLUNTEER_ADMIN_CONFIG 或 VOLUNTEER_DB_CONFIG 指向含 host、port、user、'
+              'password、database 的 JSON 配置（该账号需要建库、建表和创建触发器权限）。',
+              file=sys.stderr)
+        raise SystemExit(1)
+    # utf-8-sig tolerates the BOM that Windows editors/Set-Content often add.
+    settings=json.loads(config_path.read_text(encoding='utf-8-sig'))
+    result=initialize_database(settings)
     from .fixed_slots import migrate
-    migrate({**json.loads(args.config.read_text(encoding='utf-8')),'database':'volunteer_core'})
-    print('数据库已升级，保留现有数据。' if result.get('already_initialized') else '多业务数据表、84 个固定时段、花园 A/B 岗及演示账户已初始化。账户信息保存在 .work/demo-accounts.json。')
+    migrate({**settings,'database':'volunteer_core'})
+    print('数据库已升级，保留现有数据。' if result.get('already_initialized') else
+          f'多业务数据表、84 个固定时段、花园 A/B 岗及演示账户已初始化。账户信息保存在 {DEMO_ACCOUNTS}。')

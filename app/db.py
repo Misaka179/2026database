@@ -1,21 +1,25 @@
 """MySQL connections and serialized course-project write transactions."""
 import json
 import os
-import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / '.work' / 'python-packages'))
+from .paths import DB_CONFIG, ROOT  # ROOT kept as a public alias
+
 import pymysql
 from pymysql.cursors import DictCursor
 
 
 def config():
-    path = Path(os.environ.get('VOLUNTEER_DB_CONFIG', ROOT / '.work/mysql-core/runtime.json'))
+    path = Path(os.environ.get('VOLUNTEER_DB_CONFIG', DB_CONFIG)).expanduser()
     if not path.exists():
-        raise RuntimeError('数据库尚未配置，请运行 python scripts/local_mysql.py start')
-    return json.loads(path.read_text(encoding='utf-8'))
+        raise RuntimeError(
+            '数据库尚未配置：未找到配置文件 {path}。本机运行请先执行 '
+            'python scripts/local_mysql.py start；使用外部数据库请设置 '
+            'VOLUNTEER_DB_CONFIG 指向包含 host、port、user、password、database 的 JSON 文件。'
+            .format(path=path))
+    # utf-8-sig tolerates the BOM that Windows editors/Set-Content often add.
+    return json.loads(path.read_text(encoding='utf-8-sig'))
 
 
 class Database:

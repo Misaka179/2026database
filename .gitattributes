@@ -1,0 +1,7 @@
+# Keep Windows launchers usable after checkout on any machine.
+# cmd.exe mis-parses multi-line batch files that use LF-only line endings,
+# so .cmd/.ps1 files must always be checked out with CRLF.
+* text=auto
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

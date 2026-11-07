@@ -6,8 +6,7 @@ import json
 import os
 import secrets
 import time
-from pathlib import Path
-from .db import ROOT
+from .paths import TOKEN_SECRET
 
 
 def hash_password(password):
@@ -32,8 +31,8 @@ def verify_password(password, encoded):
 def signing_key():
     if os.environ.get('VOLUNTEER_TOKEN_SECRET'):
         return os.environ['VOLUNTEER_TOKEN_SECRET'].encode()
-    path = ROOT / '.work/token-secret'
-    path.parent.mkdir(exist_ok=True)
+    path = TOKEN_SECRET
+    path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with path.open('xb') as f:
             f.write(secrets.token_bytes(48))

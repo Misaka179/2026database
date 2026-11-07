@@ -70,7 +70,7 @@ vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').d
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'semester-ui.js'),'utf8'),context,{filename:'semester-ui.js'});
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'business-ui.js'),'utf8'),context,{filename:'business-ui.js'});
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'collection-ui.js'),'utf8'),context,{filename:'collection-ui.js'});
-for(const name of ['submission-ui.js','governance-ui.js','directory-ui.js','batch-ui.js'])vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),name),'utf8'),context,{filename:name});
+for(const name of ['submission-ui.js','governance-ui.js','directory-ui.js','batch-ui.js','leader-ui.js'])vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),name),'utf8'),context,{filename:name});
 vm.runInContext(source,context,{filename:'app.js'});
 const run = code => vm.runInContext(code,context);
 const response = value => ({ok:true,status:200,json:async()=>value});
