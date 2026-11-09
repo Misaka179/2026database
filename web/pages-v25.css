@@ -12,6 +12,85 @@
   border-top: 1px solid var(--line);
 }
 
+/* 分组之间的视觉间隔：让各分组更清晰地分开 */
+.nav-group + .nav-group {
+  margin-top: 16px;
+}
+
+/* 操作日志独立：分隔线 + 单独样式 */
+.nav-separator {
+  margin: 24px 16px 16px;
+  border-top: 2px solid var(--line);
+}
+
+.nav-list > .nav-link[data-page="logs"] {
+  margin-top: 8px;
+  color: var(--text);
+  opacity: 0.9;
+}
+
+.nav-list > .nav-link[data-page="logs"]:hover {
+  opacity: 1;
+}
+
+/* 面包屑导航 */
+.breadcrumb {
+  margin-bottom: 16px;
+  padding: 12px 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.breadcrumb button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+  font-size: inherit;
+}
+
+.breadcrumb button.link:hover {
+  text-decoration: underline;
+}
+
+/* 队员资料页面：标签页在左下方 */
+.panel-tabs {
+  margin-bottom: 16px;
+}
+
+.panel-tabs .tabs {
+  display: flex;
+  gap: 8px;
+}
+
+/* 数据列表（用于弹窗中的字段展示） */
+.data-list {
+  margin: 16px 0;
+}
+
+.field-row {
+  display: flex;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.field-row:last-child {
+  border-bottom: none;
+}
+
+.field-row label {
+  flex: 0 0 100px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.field-row span {
+  flex: 1;
+  color: var(--text);
+}
+
 /* 置顶入口（工作概览 / 收件箱）与分组标题统一为绿色矩形底色 */
 .nav-list > .nav-link {
   margin-bottom: 4px;
@@ -67,6 +146,25 @@
 
 .nav-group-toggle .i {
   color: var(--accent-text);
+}
+
+/* 分组折叠箭头：与图标体系一致，靠旋转表达展开/收起 */
+.nav-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+}
+
+.nav-caret .i {
+  width: 14px;
+  height: 14px;
+  transition: transform 150ms ease;
+}
+
+.nav-group-toggle[aria-expanded="false"] .nav-caret .i {
+  transform: rotate(-90deg);
 }
 
 /* 分组下的下拉选项：整行宽度；选中时与当前页一致，变为实心深绿 */
@@ -125,7 +223,7 @@
   height: 16px;
 }
 
-/* 修改密码成功提示：顶部居中的白色文字条（不用右下角 toast） */
+/* 修改密码成功提示：顶部居中的提示条（不用右下角 toast），跟随主题色 */
 .success-bar {
   position: fixed;
   top: 18px;
@@ -140,8 +238,8 @@
   border: 1px solid var(--line-strong, #cbcabf);
   border-left: 3px solid var(--success, #2f6b4f);
   border-radius: 10px;
-  background: #ffffff;
-  color: #1c2723;
+  background: var(--surface, #ffffff);
+  color: var(--text, #1c2723);
   box-shadow: var(--shadow-2);
   font-size: 13px;
   line-height: 1.6;
@@ -887,10 +985,11 @@ th.num {
 }
 
 .empty p {
-  max-width: 40ch;
-  margin: 0;
+  max-width: 360px;
+  margin: 0 auto;
   font-size: 12px;
   line-height: 1.8;
+  text-wrap: pretty;
 }
 
 .loading {

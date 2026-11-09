@@ -13,14 +13,29 @@ let previousFocus = null;
 let modalVersion = 0;
 let modalBusy = false;
 const nav = [
-  ['leaders','分队与美育负责人',['SUPER']],['lead-workspace','负责人工作台',['LEAD']],
-  ['inbox','收件箱',['SUPER','NORMAL','STUDENT','LEAD']],['collection-management','征集管理范围',['SUPER','NORMAL']],
-  ['groups','小组与成员',['SUPER','NORMAL']],['businesses','业务管理',['SUPER','NORMAL']],['collections','时长征集',['SUPER','NORMAL','STUDENT']],['specialty','专项导入',['SUPER']],
-  ['overview','工作概览',['SUPER','NORMAL','STUDENT','LEAD']],['schedules','排班与考勤',['SUPER','NORMAL','STUDENT']],
-  ['semesters','学期与日历',['SUPER','NORMAL','STUDENT']],['applications','申请与审批',['SUPER','NORMAL','STUDENT']],['hours','服务时长',['SUPER','STUDENT']],
-  ['credit','信用管理',['SUPER','STUDENT']],['basics','基础资料',['SUPER']],['slots','服务班次',['NORMAL']],['logs','操作日志',['SUPER']],['members','本时段队员',['NORMAL']]
+  // === 工作台 ===
+  ['overview','工作概览',['SUPER','NORMAL','STUDENT','LEAD']],
+  ['inbox','收件箱',['SUPER','NORMAL','STUDENT','LEAD']],
+  ['lead-workspace','负责人工作台',['LEAD']],
+  // === 排班服务（固定业务）===
+  ['semesters','学期与日历',['SUPER','NORMAL','STUDENT']],
+  ['schedules','排班与考勤',['SUPER','NORMAL','STUDENT']],
+  ['applications','申请与审批',['SUPER','NORMAL','STUDENT']],
+  // === 时长与信用 ===
+  ['collections','时长征集',['SUPER','NORMAL','STUDENT']],
+  ['specialty','专项导入',['SUPER']],
+  ['hours','服务时长',['SUPER','STUDENT']],
+  ['credit','信用管理',['SUPER','STUDENT']],
+  // === 队员与业务 ===
+  ['basics','队员资料',['SUPER']],
+  ['businesses','业务管理',['SUPER','NORMAL']], // 包含班次和小组查看
+  ['leaders','分队负责人',['SUPER']],
+  ['collection-management','征集权限配置',['SUPER','NORMAL']],
+  ['members','本时段队员',['NORMAL']],
+  // === 操作日志（独立）===
+  ['logs','操作日志',['SUPER']]
 ];
-const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">${uiIcon('inbox')}</div><h3>${esc(title)}</h3></div>`;
+const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">${uiIcon('inbox')}</div><h3>${esc(title)}</h3>${text?`<p>${esc(text)}</p>`:''}</div>`;
 const badge = (value, override) => `<span class="badge ${['ACTIVE','APPROVED','NORMAL','VALID'].includes(value)?'good':['REJECTED','DISABLED','ABSENT','LATE'].includes(value)?'warning':['PENDING','FIRST_APPROVED'].includes(value)?'pending':''}">${esc(override || label[value] || value || '未登记')}</span>`;
 const fmtDate = value => value ? String(value).replace('T',' ').slice(0,16) : '未记录';
 const hourText = value => `${Number((Number(value || 0)/60).toFixed(2))} 小时`;
@@ -29,8 +44,8 @@ const rowsOf = (arr, key, value) => (arr||[]).find(r => String(r[key]) === Strin
 function studentName(id) { const scheduled=rowsOf(state.data.schedules,'student_id',id);if(scheduled?.student_name)return scheduled.student_name;const s=rowsOf(state.data.students,'student_id',id);return s?s.name:(String(id)===String(state.me?.student_id)?state.me.name:id); }
 function slotName(id) { const s=rowsOf(state.data.slots,'slot_id',id); return s?(state.role==='STUDENT'||s.weekday||['WEEKLY','EVENT'].includes(s.schedule_kind)?s.team_name:`${s.team_name} · 第 ${s.period_no} 时段`):`班次 ${id}`; }
 function adminName(id) {if(id===null||id===undefined)return '待分配';const a=rowsOf(state.data.admins,'admin_id',id);return a?a.name:`管理员 ${id}`;}
-function table(headers, rows, blank='暂无记录', text='记录生成后会显示在这里。') {return rows.length?`<div class="table-wrap"><table><thead><tr>${headers.map(x=>`<th scope="col">${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:empty(blank,text);}
-function tabs(items,current){return `<div class="tabs" role="tablist" aria-label="内容分类">${items.map(([v,t])=>`<button class="tab ${current===v?'active':''}" role="tab" aria-selected="${current===v}" data-tab="${v}">${t}</button>`).join('')}</div>`;}
+function table(headers, rows, blank='暂无记录', text='记录生成后会显示在这里。') {if(!rows.length)return empty(blank,text);const actionCol=['操作','设置'].includes(headers[headers.length-1]);return `<div class="table-wrap"><table${actionCol?' class="has-actions"':''}><thead><tr>${headers.map(x=>`<th scope="col">${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`;}
+function tabs(items,current){return `<div class="tabs" role="tablist" aria-label="内容分类">${items.map(([v,t])=>`<button type="button" class="tab ${current===v?'active':''}" role="tab" aria-selected="${current===v}" data-tab="${v}">${t}</button>`).join('')}</div>`;}
 function successBar(text){const previous=document.querySelector('.success-bar');if(previous)previous.remove();const bar=document.createElement('div');bar.className='success-bar';bar.setAttribute('role','status');bar.innerHTML=`${uiIcon('check-circle')}<span>${esc(text)}</span>`;document.body.append(bar);setTimeout(()=>bar.remove(),4500);}
 function notify(text,error=false){if(!error&&typeof text==='string'&&text.indexOf('密码已更新')===0){successBar(text);return;}const n=document.createElement('div');n.className='toast'+(error?' error':'');n.textContent=text;$('#notifications').append(n);setTimeout(()=>n.remove(),5000);}
 function setTheme(theme){if(theme)document.documentElement.dataset.theme=theme;else delete document.documentElement.dataset.theme;}
@@ -81,8 +96,9 @@ async function refresh(){
   renderPage();
  }catch(e){if(!current())return;state.loading=false;state.refreshError=e.message;renderPage();}
 }
-function navigate(page){closeDialog(true);if(state.role==='LEAD'&&!['overview','inbox','lead-workspace'].includes(page)){state.leadTab=page==='hours'?'hours':page==='applications'?'withdrawal':'schedules';page='lead-workspace';}if(state.page!==page){state.inboxSelected=new Set();state.collectionSelections=new Map();}state.page=page;state.tab='';state.search='';state.status='';state.sequence++;document.querySelector('.workspace')?.classList.remove('menu-open');updateNavigation();renderPage();}
-function heading(title,text,button=''){return `<div class="page-heading"><div><h1>${title}</h1></div>${button?`<div class="page-actions">${button}</div>`:''}</div>`;}
+function navigate(page){closeDialog(true);if(state.role==='LEAD'&&!['overview','inbox','lead-workspace'].includes(page)){state.leadTab=page==='hours'?'hours':page==='applications'?'withdrawal':'schedules';page='lead-workspace';}if(state.page!==page){state.inboxSelected=new Set();state.collectionSelections=new Map();}state.page=page;state.tab='';state.search='';state.status='';state.sequence++;document.querySelector('.workspace')?.classList.remove('menu-open');scrollToTop();updateNavigation();renderPage();}
+function scrollToTop(){const body=document.querySelector('.workspace-body');if(body)body.scrollTo({top:0});window.scrollTo({top:0});}
+function heading(title,text,button=''){return `<div class="page-heading"><div><h1>${esc(title)}</h1></div>${button?`<div class="page-actions">${button}</div>`:''}</div>`;}
 function canFuture(r){return r.status==='ACTIVE'&&new Date(`${r.schedule_date}T${r.start_time}:00+08:00`)>new Date();}
 function isEnded(r){if(r.schedule_kind==='WEEKLY'){const day=new Date(`${r.schedule_date}T00:00:00+08:00`);day.setUTCDate(day.getUTCDate()-6);return day<=new Date();}return new Date(`${r.schedule_date}T${r.end_time}:00+08:00`)<=new Date();}
 function actionable(a,kind){if(kind==='transfer'&&!a.old_slot_id)return false;if(kind==='leave')return state.role==='NORMAL'&&a.approve_status==='PENDING';if(kind==='withdrawal')return state.role==='SUPER'&&a.approve_status==='PENDING'&&!a.requires_first;return state.role==='NORMAL'&&a.first_status==='PENDING'&&a.final_status==='PENDING'||state.role==='SUPER'&&a.first_status==='APPROVED'&&a.final_status==='PENDING';}
@@ -98,16 +114,22 @@ function renderPage(){
  if(state.loading||!Array.isArray(state.data.schedules)){$('#main').innerHTML='<div class="loading" role="status">正在读取最新记录…</div>';return;}
  updateInboxBadge();
  if(state.role==='LEAD'&&state.page==='overview'){leaderWorkspacePage();return;}
- const pages={leaders:leadersPage,'lead-workspace':leaderWorkspacePage,groups:groupsPage,inbox:inboxPage,'collection-management':collectionManagementPage,businesses:businessesPage,collections:collectionsPage,specialty:specialtyPage,semesters:semesterPage,overview:overview,schedules:schedulesPage,applications:applicationsPage,hours:hoursPage,credit:creditPage,basics:rosterBasicsPage,slots:slotsPage,logs:logsPage,members:membersPage};
+ const pages={leaders:leadersPage,'lead-workspace':leaderWorkspacePage,inbox:inboxPage,'collection-management':collectionManagementPage,businesses:businessesPage,collections:collectionsPage,specialty:specialtyPage,semesters:semesterPage,overview:overview,schedules:schedulesPage,applications:applicationsPage,hours:hoursPage,credit:creditPage,basics:rosterBasicsPage,logs:logsPage,members:membersPage};
  (pages[state.page]||overview)();
 }
 function overview(){
  const d=state.data;const today=getDate();const pending=['leave','transfer','withdrawal'].reduce((n,k)=>n+(d[k]||[]).filter(a=>state.role==='STUDENT'?appStatus(a,k)[0]==='PENDING':actionable(a,k)).length,0);
  const upcoming=d.schedules.filter(r=>canFuture(r)).sort((a,b)=>(a.schedule_date+a.start_time).localeCompare(b.schedule_date+b.start_time));
  const metrics=state.role==='STUDENT'?[['累计服务时长',Number((d.hours.total_minutes/60).toFixed(2)),'小时','按全部有效服务记录汇总'],['当前信用分',d.credit.credit_score,'分',label[d.credit.status]],['待处理申请',pending,'项','请假、换班和退队'],['每周固定班次',(d.memberships||[]).length,'个','可申请长期调整时段']]:[['今日排班',d.schedules.filter(r=>r.schedule_date===today&&r.status!=='CANCELLED').length,'人次','当前权限范围内的安排'],['待处理申请',pending,'项','需要你审批或确认'],['待登记考勤',d.schedules.filter(r=>r.status==='ACTIVE'&&isEnded(r)).length,'次','已结束但尚未登记'],[state.role==='SUPER'?'在队志愿者':'负责服务班次',state.role==='SUPER'?d.students.filter(s=>s.status==='ACTIVE').length:d.slots.filter(s=>s.manager_admin_id===state.me.admin_id).length,state.role==='SUPER'?'人':'个',state.role==='SUPER'?'当前正常参与服务':'仅显示你负责的班次']];
- $('#main').innerHTML=`<section class="welcome"><div><div class="eyebrow">${roleName(state.role)}工作台</div><h1>${esc(state.me.name)}，欢迎回来。</h1></div><div class="date-stamp"><strong>${today.slice(5).replace('-',' / ')}</strong>${today.slice(0,4)} 年 · ${new Intl.DateTimeFormat('zh-CN',{weekday:'long',timeZone:'Asia/Shanghai'}).format(new Date())}</div></section><section class="metrics" aria-label="工作概览统计">${metrics.map(([l,v,u,f])=>{const ic={累计服务时长:'clock',当前信用分:'shield',待处理申请:'check',每周固定班次:'calendar',今日排班:'calendar',待登记考勤:'clock',在队志愿者:'users',负责服务班次:'calendar'}[l]||'info';const accent=l==='累计服务时长'||l==='在队志愿者';return `<div class="metric"><div class="metric-label">${uiIcon(ic)}${l}</div><div class="metric-value${accent?' accent':''}">${esc(v)}<small>${u}</small></div></div>`;}).join('')}</section><div class="overview-grid"><div>${myFixedSlotsPanel()}<section class="panel"><header class="panel-header"><div><h2>接下来的服务</h2></div><button class="text-button" data-page="schedules">查看全部 →</button></header>${scheduleTable(upcoming.slice(0,5),false)}</section><section class="panel"><header class="panel-header"><div><h2>${state.role==='STUDENT'?'申请进度':'审批待办'}</h2></div><button class="text-button" data-page="applications">进入申请${state.role==='STUDENT'?'记录':'管理'} →</button></header></section></div><div><section class="panel"><header class="panel-header"><h2>常用操作</h2></header><div class="panel-content quick-links">${state.role==='STUDENT'?quick('申请请假或换班','选择对应排班，填写申请原因','schedules'):quick('查看服务安排','核对班次、人员与考勤状态','schedules')}${quick(state.role==='STUDENT'?'查看服务时长':'处理申请',state.role==='STUDENT'?'逐笔查看已认定的服务记录':'请假、换班和退队审批',state.role==='STUDENT'?'hours':'applications')}${state.role!=='STUDENT'?quick('查看服务班次','了解服务时间、地点与人数上限',state.role==='SUPER'?'basics':'slots'):''}</div></section></div></div>`;
+ $('#main').innerHTML=`<section class="welcome"><div><div class="eyebrow">${roleName(state.role)}工作台</div><h1>${esc(state.me.name)}，欢迎回来。</h1></div><div class="date-stamp"><strong>${today.slice(5).replace('-',' / ')}</strong>${today.slice(0,4)} 年 · ${new Intl.DateTimeFormat('zh-CN',{weekday:'long',timeZone:'Asia/Shanghai'}).format(new Date())}</div></section><section class="metrics" aria-label="工作概览统计">${metrics.map(([l,v,u,f])=>{const ic={累计服务时长:'clock',当前信用分:'shield',待处理申请:'check',每周固定班次:'calendar',今日排班:'calendar',待登记考勤:'clock',在队志愿者:'users',负责服务班次:'calendar'}[l]||'info';const accent=l==='累计服务时长'||l==='在队志愿者';return `<div class="metric"><div class="metric-label">${uiIcon(ic)}${l}</div><div class="metric-value${accent?' accent':''}">${esc(v)}<small>${u}</small></div></div>`;}).join('')}</section><div class="overview-grid"><div>${myFixedSlotsPanel()}<section class="panel"><header class="panel-header"><div><h2>接下来的服务</h2></div><button class="text-button" data-page="schedules">查看全部 →</button></header>${scheduleTable(upcoming.slice(0,5),false)}</section><section class="panel"><header class="panel-header"><div><h2>${state.role==='STUDENT'?'申请进度':'审批待办'}</h2></div><button class="text-button" data-page="applications">进入申请${state.role==='STUDENT'?'记录':'管理'} →</button></header>${pendingListHtml(d)}</section></div><div><section class="panel"><header class="panel-header"><h2>常用操作</h2></header><div class="panel-content quick-links">${state.role==='STUDENT'?quick('申请请假或换班','选择对应排班，填写申请原因','schedules'):quick('查看服务安排','核对班次、人员与考勤状态','schedules')}${quick(state.role==='STUDENT'?'查看服务时长':'处理申请',state.role==='STUDENT'?'逐笔查看已认定的服务记录':'请假、换班和退队审批',state.role==='STUDENT'?'hours':'applications')}${state.role!=='STUDENT'?quick('查看服务班次','了解服务时间、地点与人数上限',state.role==='SUPER'?'basics':'slots'):''}</div></section></div></div>`;
 }
-function quick(title,text,page){return `<button class="quick-link" data-page="${page}"><div><strong>${title}</strong></div><em aria-hidden="true">→</em></button>`;}
+function quick(title,text,page){return `<button class="quick-link" data-page="${page}"><div><strong>${esc(title)}</strong>${text?`<span>${esc(text)}</span>`:''}</div><em aria-hidden="true">→</em></button>`;}
+function pendingListHtml(d){
+ const kinds=[['leave','请假'],['transfer','换班'],['withdrawal','退队']];
+ const items=kinds.flatMap(([kind,title])=>(d[kind]||[]).filter(a=>state.role==='STUDENT'?appStatus(a,kind)[0]==='PENDING':actionable(a,kind)).map(a=>({kind,title,a}))).slice(0,4);
+ if(!items.length)return '<div class="panel-content"><p class="muted">暂无待处理的申请，新的申请会显示在这里。</p></div>';
+ return `<div class="panel-content"><div class="quick-links">${items.map(({kind,title,a})=>`<button class="quick-link" data-page="applications"><div><strong>${esc(studentName(a.student_id))}</strong><span>${title} · ${esc(fmtDate(a.apply_time))}</span></div><em aria-hidden="true">→</em></button>`).join('')}</div></div>`;
+}
 function scheduleTable(records,actions=true){return table(['服务日期','志愿者','服务班次','状态',...(actions?['操作']:[])],records.map(r=>`<tr><td><strong>${esc(r.schedule_date)}</strong><small>${r.week_no?`第 ${r.week_no} 周 · `:''}${r.schedule_kind==='WEEKLY'?'周日为统计归属日':r.schedule_kind==='EVENT'?'非固定服务':esc(r.start_time)+' 至 '+esc(r.end_time)}</small></td><td>${esc(studentName(r.student_id))}<small>${esc(r.student_id)}</small></td><td><strong>${esc(slotName(r.slot_id))}</strong><small>${esc(r.location)}</small></td><td>${badge(r.attendance_status||r.status)}${r.attendance_source==='AUTO_WEEKLY'?'<small>按周自动结算</small>':''}${r.leave_approved&&!r.attendance_status?'<small>请假已获批</small>':''}</td>${actions?`<td><div class="row-actions">${scheduleActions(r)}</div></td>`:''}</tr>`),'暂无具体日期排班','设置学期后按固定时段生成，用于请假及考勤。');}
 function scheduleActions(r){
  if(r.schedule_kind==='EVENT')return state.role==='SUPER'&&r.status==='ACTIVE'&&r.source_key?.startsWith('manual:')&&r.schedule_date<=getDate()?`<button class="text-button" data-action="event-confirm" data-id="${r.schedule_id}">认定本次时长</button>`:'<span class="muted">已认定记录可在服务时长中修正</span>';
@@ -164,37 +186,32 @@ async function creditPage(){
  }catch(e){if(seq===state.sequence)$('#credit-result').innerHTML=`<p class="notice error">${esc(e.message)}</p>`;}
 }
 function slotTable(){if(state.data.slots.some(s=>s.weekday))return fixedSlotTable();return table(['服务班次','服务时间','地点','人数上限','标准时长','负责人'],state.data.slots.map(r=>`<tr><td><strong>${esc(r.team_name)}</strong><small>第 ${r.period_no} 时段 ${r.status==='DISABLED'?'（已停用）':''}</small></td><td>${esc(r.start_time)} 至 ${esc(r.end_time)}</td><td>${esc(r.location)}</td><td>${r.need_num} 人</td><td>${hourText(r.service_minutes)}</td><td>${esc(adminName(r.manager_admin_id))}</td></tr>`),'暂无服务班次','由超级管理员添加班次和负责人后显示。');}
-function slotsPage(){ $('#main').innerHTML=heading('服务班次','查看班次时间、服务地点与人数上限。')+`<section class="panel">${slotTable()}</section>`;}
-function basicsPage(){const kind=state.tab||'students';const titles={students:'志愿者',admins:'管理员',slots:'服务班次'};let content;
- if(kind==='students')content=table(['姓名与学号','学院','联系电话','信用分','状态'],state.data.students.map(s=>`<tr><td><strong>${esc(s.name)}</strong><small>${esc(s.student_id)}</small></td><td>${esc(s.college||'未填写')}</td><td>${esc(s.phone||'未填写')}</td><td>${s.credit_score} 分</td><td>${badge(s.status,s.status==='ACTIVE'?'在队':label[s.status])}</td></tr>`),'暂无志愿者','点击新增志愿者建立第一条记录。');
- else if(kind==='admins')content=table(['姓名','登录账号','关联队员','管理角色','负责时段','状态',...(state.role==='SUPER'?['操作']:[])],state.data.admins.map(a=>`<tr><td><strong>${esc(a.name)}</strong></td><td>${esc(a.account)}</td><td>${esc(a.student_id||'独立管理员')}</td><td>${roleName(a.role)}</td><td class="wrap">${a.role==='SUPER'?'全队管理':state.data.slots.filter(s=>s.weekday&&s.manager_admin_id===a.admin_id).map(s=>esc(s.team_name)).join('、')||'尚未分配'}</td><td>${badge(a.status,a.status==='ACTIVE'?'已启用':'已停用')}</td>${state.role==='SUPER'?`<td><button class="text-button" data-action="reset-admin-password" data-id="${a.admin_id}">重置密码</button></td>`:''}</tr>`));
- else content=slotTable();
- $('#main').innerHTML=heading('基础资料','维护志愿者、管理员及服务班次。',`<button class="btn primary" data-action="create-${kind}">新增${titles[kind]}</button>`)+`<div class="toolbar">${tabs([['students','志愿者'],['admins','管理员'],['slots','服务班次']],kind)}</div><section class="panel">${content}</section>`;
-}
 async function logsPage(){const seq=++state.sequence;$('#main').innerHTML=heading('操作日志','查看最近 100 条重要操作，核对修改前后的内容。','<button class="btn" data-action="refresh">刷新日志</button>')+'<section class="panel" id="logs-result"><div class="loading" role="status">正在读取操作日志…</div></section>';try{const rows=await request('/operation-logs');if(seq!==state.sequence)return;state.data.logs=rows;$('#logs-result').innerHTML=table(['操作时间','操作人员','操作内容','说明','操作'],rows.map(r=>`<tr><td>${fmtDate(r.operation_time)}</td><td>${esc(adminName(r.admin_id))}</td><td>${esc(operationNames[r.operation_type]||'数据操作')}</td><td class="wrap">${esc(r.reason||'未附加说明')}</td><td><button class="text-button" data-action="log-detail" data-id="${r.log_id}">查看详情</button></td></tr>`),'暂无操作日志','新增资料、审批和考勤等重要操作会自动留存记录。');}catch(e){if(seq===state.sequence)$('#logs-result').innerHTML=`<p class="notice error">${esc(e.message)}</p>`;}}
 
 // All destructive or consequential business actions go through a named dialog.
 function openDialog(title,subtitle,fields,onSubmit,button='确认提交'){
  if(modalBusy)return;
+ if(dialog.open)closeDialog(true);
  previousFocus=document.activeElement;modalSubmit=onSubmit;modalVersion++;
  dialog.classList.remove('collection-dialog');
- dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(title)}</h2></div><button class="close-button" data-action="close">关闭</button></header><div class="dialog-body"><form id="action-form" novalidate><div class="form-grid">${fields}</div><div id="action-error" class="notice error" role="alert" hidden></div><footer class="dialog-footer"><button type="button" class="btn" data-action="close">取消</button><button class="btn primary" type="submit">${esc(button)}</button></footer></form></div>`;
+ dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(title)}</h2>${subtitle?`<p>${esc(subtitle)}</p>`:''}</div><button class="close-button" data-action="close">关闭</button></header><div class="dialog-body"><form id="action-form" novalidate><div class="form-grid">${fields}</div><div id="action-error" class="notice error" role="alert" hidden></div><footer class="dialog-footer"><button type="button" class="btn" data-action="close">取消</button><button class="btn primary" type="submit">${esc(button)}</button></footer></form></div>`;
  dialog.showModal();
 }
-function openReadOnlyDialog(title,content){
- if(modalBusy||dialog.open)return;
+function openReadOnlyDialog(title,content,subtitle=''){
+ if(modalBusy)return;
+ if(dialog.open)closeDialog(true);
  previousFocus=document.activeElement;modalSubmit=null;modalVersion++;
  dialog.classList.remove('collection-dialog');
- dialog.innerHTML=`<header class="dialog-header"><h2 id="dialog-title">${esc(title)}</h2><button class="close-button" type="button" data-action="close">关闭</button></header><div class="dialog-body">${content}</div>`;
+ dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(title)}</h2>${subtitle?`<p>${esc(subtitle)}</p>`:''}</div><button class="close-button" type="button" data-action="close">关闭</button></header><div class="dialog-body">${content}</div>`;
  dialog.showModal();
 }
 function setModalBusy(busy){modalBusy=busy;dialog.querySelectorAll('[data-action="close"]').forEach(button=>button.disabled=busy);}
 function closeDialog(force=false){if(modalBusy&&!force)return;if(!dialog.open&&!modalSubmit)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();dialog.classList.remove('collection-dialog');dialog.innerHTML='';modalSubmit=null;const focus=previousFocus;previousFocus=null;focus?.focus?.();}
-function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength,icon}={}){
- const attrs=`id="f-${name}" name="${name}" ${required?'required':''} ${min!==undefined?`min="${min}"`:''} ${max!==undefined?`max="${max}"`:''} ${step!==undefined?`step="${step}"`:''} ${maxLength?`maxlength="${maxLength}"`:''}`;
+function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength,minLength,icon}={}){
+ const attrs=`id="f-${name}" name="${name}" ${required?'required':''} ${min!==undefined?`min="${min}"`:''} ${max!==undefined?`max="${max}"`:''} ${step!==undefined?`step="${step}"`:''} ${maxLength?`maxlength="${maxLength}"`:''} ${minLength?`minlength="${minLength}"`:''}`;
  const inputElement=options?`<select ${attrs}>${options.map(([v,t])=>`<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(t)}</option>`).join('')}</select>`:type==='textarea'?`<textarea ${attrs} placeholder="${esc(placeholder)}">${esc(value)}</textarea>`:`<input ${attrs} type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${type==='password'?'autocomplete="new-password"':''}>`;
- const content = icon ? `<div class="auth-control">${uiIcon(icon, 'lead')}${inputElement}</div>` : inputElement;
- return `<div class="field ${full?'full':''}"><label for="f-${name}">${esc(title)}${!required?'<span class="required-label">选填</span>':''}</label>${content}</div>`;
+ const content = icon ? `<div class="field-control">${uiIcon(icon, 'lead')}${inputElement}</div>` : inputElement;
+ return `<div class="field ${full?'full':''}"><label for="f-${name}">${esc(title)}${!required?'<span class="required-label">选填</span>':''}</label>${content}${help?`<small class="field-help">${esc(help)}</small>`:''}</div>`;
 }
 const reasonField=()=>field('reason','原因说明',{type:'textarea',full:true,maxLength:500,placeholder:'请填写具体原因，便于审批和后续核对'});
 function changePasswordDialog(){
@@ -218,11 +235,6 @@ function action(name,id,kind){
  if(name==='change-password')return changePasswordDialog();
  if(leaderAction(name,id)||directoryAction(name,id)||governanceAction(name,id,kind)||businessAction(name,id,kind)||semesterAction(name,id)||rosterAction(name,id))return;
  const r=rowsOf(state.data.schedules,'schedule_id',id);
- if(name==='leave'){
-  const opts=id?[[id,`${r.schedule_date} ${slotName(r.slot_id)}`]]:scheduleOptions();
-  if(!opts.length)return notify('请假需要具体服务日期，请联系管理员检查学期日历与时段配置。',true);
-  return openDialog('提交请假申请','请假获批后不计服务时长，也不按缺勤扣分。',field('schedule_id','对应排班',{options:opts,full:true})+reasonField(),v=>send('/applications/leave',{schedule_id:Number(v.schedule_id),reason:v.reason}));
- }
  if(name==='transfer')return rosterAction('fixed-transfer');
  if(name==='new-application')return action((state.tab||'leave')==='transfer'?'transfer':'leave');
  if(name==='withdrawal')return openDialog('申请退出志愿队','获批后将取消未来未开始的排班，历史服务和信用记录会保留。',reasonField(),v=>send('/applications/withdrawal',v),'提交退队申请');
@@ -253,7 +265,7 @@ function action(name,id,kind){
   const record=rowsOf(state.data.logs,'log_id',id);
   const displayValue=(key,value)=>value===null||value===undefined||value===''?'未填写':Array.isArray(value)?value.map(v=>key==='slots'?`${slotName(v)}（编号 ${v}）`:v).join('、')||'无':key==='role'?roleName(value):typeof value==='boolean'?(value?'是':'否'):label[value]??value;
   const details=value=>{let data=value;if(typeof data==='string'){try{data=JSON.parse(data);}catch{return esc(data);}}return data?`<dl class="data-list">${Object.entries(data).filter(([k])=>!k.includes('password')).map(([k,v])=>`<dt>${esc(fieldNames[k]||'关联信息')}</dt><dd>${esc(displayValue(k,v))}</dd>`).join('')}</dl>`:'<p class="muted">无</p>';};
-  previousFocus=document.activeElement;modalSubmit=null;modalVersion++;dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(operationNames[record.operation_type]||'操作详情')}</h2><p>${fmtDate(record.operation_time)}，${esc(adminName(record.admin_id))}</p></div><button class="close-button" data-action="close">关闭</button></header><div class="dialog-body"><p>${esc(record.reason||'未附加说明')}</p><div class="log-values"><h3>修改前</h3>${details(record.before_value)}<hr><h3>修改后</h3>${details(record.after_value)}</div></div>`;return dialog.showModal();
+  return openReadOnlyDialog(operationNames[record.operation_type]||'操作详情',`<p>${esc(record.reason||'未附加说明')}</p><div class="log-values"><h3>修改前</h3>${details(record.before_value)}<hr><h3>修改后</h3>${details(record.after_value)}</div>`,`${fmtDate(record.operation_time)}，${esc(adminName(record.admin_id))}`);
  }
 }
 function validate(form){
@@ -487,7 +499,7 @@ function loginView() {
           <div id="login-error" class="notice error" role="alert" hidden></div>
           <button class="auth-submit" type="submit">登录工作台 ${uiIcon('arrow-right')}</button>
         </form>
-        <p class="auth-help" style="text-align:center;margin-top:18px">
+        <p class="auth-help auth-help--center">
           <a class="auth-link" href="/password#reset">找回密码</a>
         </p>
       </div>

@@ -7,7 +7,15 @@ async function businessesPage(){
  const editable=state.role==='SUPER';
  const biz=state.data.businesses||[];
  $('#main').innerHTML=heading('业务管理','维护业务、固定时段及负责人；停用归档保留历史，可恢复。',editable?'<div class="button-row"><button class="btn primary" data-action="business-create">新增业务</button><button class="btn" data-action="manual-event">录入临时服务</button></div>':'')+
- `<section class="panel">${table(['业务','类型 / 状态','管理方式',...(editable?['操作']:[])],biz.filter(b=>editable||b.can_collect||b.can_manage||b.manager_scope!=='NONE').map(b=>`<tr><td>${esc(b.name)}</td><td>${b.kind==='FIXED'?'固定时段':b.kind==='WEEKLY'?'每周岗位':'非固定业务'}<small>${badge(b.status||'ACTIVE')}</small></td><td>${b.manager_scope==='SLOT'?'按时段管理':b.manager_scope==='BUSINESS'?esc(adminName(b.manager_admin_id)):'按征集管理范围授权'}</td>${editable?`<td>${b.status==='ARCHIVED'?`<button class="text-button" data-action="business-restore" data-id="${b.business_id}">恢复业务</button>`:`<button class="text-button" data-action="business-rename" data-id="${b.business_id}">改名</button><button class="text-button" data-action="business-archive" data-id="${b.business_id}">停用归档</button>${b.kind==='FIXED'?`<button class="text-button" data-action="business-slot" data-id="${b.business_id}">添加时段</button>`:''}${b.manager_scope==='BUSINESS'?`<button class="text-button" data-action="business-manager" data-id="${b.business_id}">设置管理员</button>`:b.kind==='EVENT'?`<button class="text-button" data-action="event-member" data-id="${b.business_id}">调整业务名单</button>`:'<button class="text-button" data-page="basics">时段与成员设置</button>'}`}</td>`:''}</tr>`))}</section>`+
+ `<section class="panel">${table(['业务','类型 / 状态','管理方式','操作'],biz.filter(b=>editable||b.can_collect||b.can_manage||b.manager_scope!=='NONE').map(b=>{
+   const drill=['FIXED','WEEKLY'].includes(b.kind)
+     ?`<button class="text-button" data-action="view-business-slots" data-id="${b.business_id}">查看班次</button>`
+     :`<button class="text-button" data-action="view-business-groups" data-id="${b.business_id}">查看小组</button>`;
+   const manage=!editable?'':(b.status==='ARCHIVED'
+     ?`<button class="text-button" data-action="business-restore" data-id="${b.business_id}">恢复业务</button>`
+     :`<button class="text-button" data-action="business-rename" data-id="${b.business_id}">改名</button><button class="text-button" data-action="business-archive" data-id="${b.business_id}">停用归档</button>${b.kind==='FIXED'?`<button class="text-button" data-action="business-slot" data-id="${b.business_id}">添加时段</button>`:''}${b.manager_scope==='BUSINESS'?`<button class="text-button" data-action="business-manager" data-id="${b.business_id}">设置管理员</button>`:b.kind==='EVENT'?`<button class="text-button" data-action="event-member" data-id="${b.business_id}">调整业务名单</button>`:'<button class="text-button" data-page="basics">时段与成员设置</button>'}`);
+   return `<tr><td>${esc(b.name)}</td><td>${b.kind==='FIXED'?'固定时段':b.kind==='WEEKLY'?'每周岗位':'非固定业务'}<small>${badge(b.status||'ACTIVE')}</small></td><td>${b.manager_scope==='SLOT'?'按时段管理':b.manager_scope==='BUSINESS'?esc(adminName(b.manager_admin_id)):'按征集管理范围授权'}</td><td><div class="row-actions">${drill}${manage}</div></td></tr>`;
+ }))}</section>`+
  `<div class="query-form"><div class="field"><label for="business-term">查看学期</label><select id="business-term">${(state.data.semesters||[]).map(t=>`<option value="${t.semester_id}" ${String(state.businessTerm||'')===String(t.semester_id)?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div><button class="btn" data-action="business-term">查看每周安排</button></div><section class="panel" id="business-weeks">正在读取每周安排…</section>`;
  const term=$('#business-term')?.value;if(!term){$('#business-weeks').textContent='请先设置学期。';return;}
  try{
@@ -27,7 +35,7 @@ async function collectionsPage(){
 }
 function specialtyPage(){
  $('#main').innerHTML=heading('专项名单及时长导入','填写专项业务名称，上传队员和每次服务的日期、事项、时长。先预览再确认。')+
- `<section class="panel"><div class="dialog-body"><div class="form-grid">${field('specialty-business','业务名称',{full:true,maxLength:100,placeholder:'例如：讲解队、校庆专项服务'})}<div class="field full"><label for="specialty-file">Excel 文件</label><input id="specialty-file" type="file" accept=".xlsx"></div>${field('specialty-password','新队员初始密码',{type:'password',required:false,full:true,help:'存在新学号时必填，已有账号密码不会改变。'})}</div><div class="button-row"><button class="btn" data-action="specialty-template">下载导入模板</button><button class="btn primary" data-action="specialty-preview">预览导入</button></div><div id="specialty-preview" aria-live="polite"></div></div></section>`;
+ `<section class="panel"><div class="panel-content padded"><div class="form-grid">${field('specialty-business','业务名称',{full:true,maxLength:100,placeholder:'例如：讲解队、校庆专项服务'})}<div class="field full"><label for="specialty-file">Excel 文件</label><input id="specialty-file" type="file" accept=".xlsx"></div>${field('specialty-password','新队员初始密码',{type:'password',required:false,full:true,help:'存在新学号时必填，已有账号密码不会改变。'})}</div><div class="button-row"><button class="btn" data-action="specialty-template">下载导入模板</button><button class="btn primary" data-action="specialty-preview">预览导入</button></div><div id="specialty-preview" aria-live="polite"></div></div></section>`;
  state.specialtyPreview=null;
 }
 async function downloadBusinessFile(path,filename){
@@ -114,8 +122,8 @@ async function showLeaveEvidence(id){
   const items=await request(`/applications/leave/${id}/evidence`);if(session!==state.sessionVersion)return;
   const urls=await Promise.all(items.map(async i=>{const r=await fetch(`/applications/leave/${id}/evidence/${i.attachment_id}`,{headers:{Authorization:`Bearer ${state.token}`}});if(!r.ok)throw new Error('图片读取失败');return URL.createObjectURL(await r.blob());}));
   if(session!==state.sessionVersion){urls.forEach(URL.revokeObjectURL);return;}
-  previousFocus=document.activeElement;modalSubmit=null;modalVersion++;
-  dialog.innerHTML='<header class="dialog-header"><h2 id="dialog-title">请假证明</h2><button class="close-button" data-action="close">关闭</button></header><div class="dialog-body">'+(urls.map(u=>`<img src="${u}" alt="请假证明图片" style="max-width:100%;height:auto">`).join('')||'<p>历史申请未附图片。</p>')+'</div>';dialog.showModal();dialog.addEventListener('close',()=>urls.forEach(URL.revokeObjectURL),{once:true});
+  openReadOnlyDialog('请假证明',(urls.map(u=>`<img class="collection-image" src="${u}" alt="请假证明图片">`).join('')||'<p class="muted">历史申请未附图片。</p>'),'图片仅用于核验本次请假，关闭后释放。');
+  dialog.addEventListener('close',()=>urls.forEach(URL.revokeObjectURL),{once:true});
  }catch(e){notify(e.message,true);}
 }
 

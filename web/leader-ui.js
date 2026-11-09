@@ -26,7 +26,7 @@ function leaderWorkspacePage(){
 }
 async function showLeaderReport(id){
  try{const r=await request(`/leader-reports/${id}`),p=r.payload;
-  openDialog(`${r.name} ${r.service_date} 工作日报`,'日报为生成时快照。未登记异常按默认出勤预计；累计为本范围截至该日已入账时长。',`<div class="field full"><p>预计 ${hourText(p.expected_minutes)}；已认定 ${hourText(p.recognized_minutes)}</p>${table(['队员','时段','考勤','预计时长','已认定时长','累计时长'],p.rows.map(x=>`<tr><td>${esc(x.name)}<small>${esc(x.student_id)}</small></td><td>${esc(x.team_name)}</td><td>${x.status==='CANCELLED'?'已取消':esc(label[x.attendance_status]||'默认出勤（未结算）')}</td><td>${hourText(x.expected_minutes)}</td><td>${hourText(x.recognized_minutes)}</td><td>${hourText(x.cumulative_minutes)}</td></tr>`))}</div>`,async()=>{},'关闭');scrollableDialog();
+  openReadOnlyDialog(`${r.name} ${r.service_date} 工作日报`,`<p class="muted">预计 ${hourText(p.expected_minutes)}；已认定 ${hourText(p.recognized_minutes)}</p>${table(['队员','时段','考勤','预计时长','已认定时长','累计时长'],p.rows.map(x=>`<tr><td>${esc(x.name)}<small>${esc(x.student_id)}</small></td><td>${esc(x.team_name)}</td><td>${x.status==='CANCELLED'?'已取消':esc(label[x.attendance_status]||'默认出勤（未结算）')}</td><td>${hourText(x.expected_minutes)}</td><td>${hourText(x.recognized_minutes)}</td><td>${hourText(x.cumulative_minutes)}</td></tr>`))}`,'日报为生成时快照；未登记异常按默认出勤预计，累计为本范围截至该日已入账时长。');
  }catch(e){notify(e.message,true);}
 }
 function leaderAction(name,id){

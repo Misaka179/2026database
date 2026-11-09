@@ -1,16 +1,26 @@
 'use strict';
-const navGroups=[['people','业务与人员',['leaders','lead-workspace','businesses','groups','basics','members','slots']],['work','排班与考勤',['schedules','semesters']],['hours','时长与信用',['collections','hours','specialty','credit']],['approvals','申请与审批',['applications','collection-management']],['system','系统管理',['logs']]];
+// 按业务逻辑分组：排班服务、时长与信用、队员与业务（操作日志独立）
+const navGroups=[
+  ['schedule','排班服务',['semesters','schedules','applications']],
+  ['hours','时长与信用',['collections','specialty','hours','credit']],
+  ['org','队员与业务',['basics','businesses','leaders','collection-management','members']]
+];
 function navigationHtml(available){
  let saved={};try{saved=JSON.parse(localStorage.getItem('nav-folds-'+state.role)||'{}');}catch{}
  const link=([id,title])=>{const navIcon=id==='overview'?'home':id==='inbox'?'inbox':'';return `<button class="nav-link ${state.page===id?'active':''}" data-page="${id}" ${state.page===id?'aria-current="page"':''}>${navIcon?uiIcon(navIcon):''}${title}${id==='inbox'?'<span class="badge pending" data-inbox-count hidden></span>':''}</button>`;};
- return ['overview','inbox'].map(id=>available.find(n=>n[0]===id)).filter(Boolean).map(link).join('')+navGroups.map(([id,title,items])=>{
+ const pinnedLinks = ['overview','inbox'].map(id=>available.find(n=>n[0]===id)).filter(Boolean).map(link).join('');
+ const groupsHtml = navGroups.map(([id,title,items])=>{
   const children=items.map(k=>available.find(n=>n[0]===k)).filter(Boolean);if(!children.length)return '';
   const open=items.includes(state.page)||saved[id]===true;
-  return `<div class="nav-group"><button class="nav-group-toggle" data-action="nav-toggle" data-id="${id}" aria-expanded="${open}" aria-controls="nav-${id}">${title}<span aria-hidden="true">${open?'⌄':'›'}</span></button><div id="nav-${id}" class="nav-children" ${open?'':'hidden'}>${children.map(link).join('')}</div></div>`;
+  return `<div class="nav-group"><button class="nav-group-toggle" data-action="nav-toggle" data-id="${id}" aria-expanded="${open}" aria-controls="nav-${id}">${title}<span class="nav-caret" aria-hidden="true">${uiIcon('chevron-down')}</span></button><div id="nav-${id}" class="nav-children" ${open?'':'hidden'}>${children.map(link).join('')}</div></div>`;
  }).join('');
+ // 操作日志独立在最底部
+ const logsPage = available.find(n=>n[0]==='logs');
+ const logsLink = logsPage ? `<div class="nav-separator"></div><button class="nav-link nav-link-plain ${state.page===logsPage[0]?'active':''}" data-page="${logsPage[0]}">${logsPage[1]}</button>` : '';
+ return pinnedLinks + groupsHtml + logsLink;
 }
 function updateNavigation(){const el=document.querySelector('.nav-list');if(el){el.innerHTML=navigationHtml(nav.filter(n=>n[2].includes(state.role)));updateInboxBadge();}}
-function toggleNavGroup(id){let saved={};try{saved=JSON.parse(localStorage.getItem('nav-folds-'+state.role)||'{}');}catch{}const el=document.querySelector(`[data-action="nav-toggle"][data-id="${id}"]`);const open=el.getAttribute('aria-expanded')!=='true';saved[id]=open;localStorage.setItem('nav-folds-'+state.role,JSON.stringify(saved));el.setAttribute('aria-expanded',String(open));el.querySelector('span').textContent=open?'⌄':'›';document.getElementById('nav-'+id).hidden=!open;}
+function toggleNavGroup(id){let saved={};try{saved=JSON.parse(localStorage.getItem('nav-folds-'+state.role)||'{}');}catch{}const el=document.querySelector(`[data-action="nav-toggle"][data-id="${id}"]`);const open=el.getAttribute('aria-expanded')!=='true';saved[id]=open;localStorage.setItem('nav-folds-'+state.role,JSON.stringify(saved));el.setAttribute('aria-expanded',String(open));document.getElementById('nav-'+id).hidden=!open;}
 const activeBusinesses=()=> (state.data.businesses||[]).filter(b=>b.status!=='ARCHIVED');
 function groupFilter(value=state.groupId){return `<div class="field group-filter"><label for="group-filter">小组</label><select id="group-filter" name="group_id"><option value="">全部小组</option><option value="0" ${String(value)==='0'?'selected':''}>未分组</option>${(state.data.groups||[]).filter(g=>!state.businessId||String(g.business_id)===String(state.businessId)).map(g=>`<option value="${g.group_id}" ${String(value)===String(g.group_id)?'selected':''}>${esc(g.name)}</option>`).join('')}</select></div>`;}
 function slotFields(prefix=''){
@@ -35,13 +45,6 @@ async function openArchive(id,restore=false){
   openDialog((restore?'恢复业务：':'停用归档：')+b.name,info,(!restore&&blockers.length?'<div class="notice error full">请先处理以下事项：'+blockers.map(r=>`<p>${esc(r.kind)} #${r.id} ${esc(r.label||'')}</p>`).join('')+'</div>':'')+reasonField(),v=>{if(!restore&&blockers.length)throw new Error('请先处理列出的待办后重新打开预览。');return send(`/businesses/${id}/${restore?'restore':'archive'}`,{reason:v.reason,expected_revision:impact.revision});},restore?'确认恢复':'确认停用归档');
   if(!restore&&blockers.length)$('#action-dialog [type="submit"]').disabled=true;
  }catch(e){notify(e.message,true);}
-}
-async function groupsPage(){
- const seq=++state.sequence;$('#main').innerHTML=heading('小组与成员','支持兼任；加入小组同时建立所属业务归属，离开小组不会删除历史。',state.role==='SUPER'?'<button class="btn primary" data-action="member-import">导入业务／小组名单</button>':'')+'<section class="panel" id="groups-result">正在读取…</section><section id="group-members-result"></section>';
- try{const groups=await request('/business-groups');if(seq!==state.sequence)return;state.data.groups=groups;
-  $('#groups-result').innerHTML=table(['业务 / 小组','在队人数','操作'],groups.filter(g=>g.can_manage).map(g=>`<tr><td>${esc(g.business_name)}<small>${esc(g.name)}${g.business_status==='ARCHIVED'?'（已归档）':''}</small></td><td>${g.member_count}</td><td><button class="text-button" data-action="group-show" data-id="${g.group_id}">查看名单</button>${state.role==='SUPER'&&g.business_status==='ACTIVE'?`<button class="text-button" data-action="group-member" data-id="${g.group_id}">调整成员</button>`:''}</td></tr>`),'暂无可管理小组','请先申请或配置管理范围。');
-  if(state.role==='SUPER'){const bids=new Set(groups.map(g=>g.business_id));const ungrouped=(state.data.students||[]).filter(p=>p.status==='ACTIVE'&&(p.business_ids||[]).some(b=>bids.has(b)&&!(p.groups||[]).some(g=>g.business_id===b)));$('#groups-result').insertAdjacentHTML('beforeend','<header class="panel-header"><h2>干部及干事 · 未分组成员</h2></header>'+table(['姓名','学号'],ungrouped.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.student_id)}</td></tr>`),'暂无未分组成员','历史成员不会被自动分配小组。'));}
- }catch(e){if(seq===state.sequence)$('#groups-result').textContent=e.message;}
 }
 async function showGroupMembers(id){const seq=state.sequence,session=state.sessionVersion;try{const rows=await request(`/business-groups/${id}/members`);if(seq!==state.sequence||session!==state.sessionVersion||state.page!=='groups')return;const g=rowsOf(state.data.groups,'group_id',id);if(!g)return;openReadOnlyDialog(g.name,table(['姓名','学号','生效日期','结束日期'],rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.student_id)}</td><td>${esc(r.effective_from)}</td><td>${esc(r.effective_until||'持续有效')}</td></tr>`),'暂无小组成员','该小组当前没有成员。'));}catch(e){if(seq===state.sequence&&session===state.sessionVersion)notify(e.message,true);}}
 function directoryAction(name,id){
