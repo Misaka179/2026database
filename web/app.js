@@ -20,7 +20,7 @@ const nav = [
   ['semesters','学期与日历',['SUPER','NORMAL','STUDENT']],['applications','申请与审批',['SUPER','NORMAL','STUDENT']],['hours','服务时长',['SUPER','STUDENT']],
   ['credit','信用管理',['SUPER','STUDENT']],['basics','基础资料',['SUPER']],['slots','服务班次',['NORMAL']],['logs','操作日志',['SUPER']],['members','本时段队员',['NORMAL']]
 ];
-const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">${uiIcon('inbox')}</div><h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
+const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">${uiIcon('inbox')}</div><h3>${esc(title)}</h3></div>`;
 const badge = (value, override) => `<span class="badge ${['ACTIVE','APPROVED','NORMAL','VALID'].includes(value)?'good':['REJECTED','DISABLED','ABSENT','LATE'].includes(value)?'warning':['PENDING','FIRST_APPROVED'].includes(value)?'pending':''}">${esc(override || label[value] || value || '未登记')}</span>`;
 const fmtDate = value => value ? String(value).replace('T',' ').slice(0,16) : '未记录';
 const hourText = value => `${Number((Number(value || 0)/60).toFixed(2))} 小时`;
@@ -65,6 +65,7 @@ async function loadData(role=state.role){
  if(role==='STUDENT')data.slots=[...new Map([...(data.memberships||[]),...(data.schedules||[]),...(data.hours?.records||[])].map(s=>[s.slot_id,s])).values()];
  return data;
 }
+
 async function refresh(){
  if(!state.me||!$('#main'))return;
  // Loading the shared data must survive navigation; page-specific queries use sequence.
@@ -399,40 +400,33 @@ function loginView() {
     : '';
   app.innerHTML = `<main class="auth-page" id="main">
     <section class="auth-hero" aria-label="系统简介">
-      <p class="auth-hero-top">图书馆志愿服务管理系统</p>
+      <p class="auth-hero-top">四川大学图书馆志愿服务队管理系统</p>
       <div class="auth-hero-main">
         <div class="auth-brand">
           <span class="auth-brand-tile">${uiIcon('book')}</span>
           <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
         </div>
         <span class="auth-chip">志愿服务 · 一站式管理</span>
-        <h1 class="auth-headline">把每一次志愿服务，<br>安排妥当。</h1>
-        <p class="auth-lead">从排班与考勤，到请假审批、服务时长与信用记录，在同一处完成日常管理，每一步都可追溯。</p>
+        <h1 class="auth-headline">把每一次志愿服务，安排妥当。</h1>
         <div class="auth-features">
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('calendar')}</span>
-            <span><strong>排班与考勤</strong><small>按学期日历自动生成，结束后登记出勤。</small></span>
+            <span><strong>排班与考勤</strong></span>
           </div>
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('check')}</span>
-            <span><strong>申请与审批</strong><small>请假、长期换班和退队，进度清晰可查。</small></span>
+            <span><strong>申请与审批</strong></span>
           </div>
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('clock')}</span>
-            <span><strong>时长与信用</strong><small>逐笔记录，保留每次变更的依据。</small></span>
+            <span><strong>时长与信用</strong></span>
           </div>
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('users')}</span>
-            <span><strong>分队与负责人</strong><small>按业务与小组分工，权限范围明确。</small></span>
+            <span><strong>管理与分队</strong></span>
           </div>
         </div>
-        <div class="auth-stats" aria-label="系统概况">
-          <div class="auth-stat"><strong>335</strong><small>在册志愿者</small></div>
-          <div class="auth-stat"><strong>7,035</strong><small>累计服务小时</small></div>
-          <div class="auth-stat"><strong>35</strong><small>固定服务时段</small></div>
-        </div>
       </div>
-      <p class="auth-quote">${uiIcon('book')}以书为伴，以服务为荣 —— 四川大学图书馆志愿服务队</p>
     </section>
     <section class="auth-panel">
       <button class="theme-button auth-theme" type="button" data-action="theme" aria-label="切换外观">
@@ -445,7 +439,6 @@ function loginView() {
           <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
         </div>
         <h2>欢迎回来</h2>
-        <p class="auth-sub">使用你的账号登录工作台。</p>
         ${hintNotice}
         <form class="auth-form" id="login-form" novalidate>
           <div class="auth-field">
@@ -466,7 +459,6 @@ function loginView() {
               <input id="login-account" name="account" type="text" autocomplete="username"
                      value="${hintAccount}"
                      placeholder="请输入管理员账号或学号" required maxlength="64">
-              <span class="trail">${uiIcon('help')}</span>
             </div>
           </div>
           <div class="auth-field">
@@ -486,24 +478,12 @@ function loginView() {
               </span>
             </div>
           </div>
-          <div class="auth-row">
-            <span class="auth-help">登录有效期 1 小时</span>
-            <a class="auth-link" href="/password#reset">无法登录？联系队伍组</a>
-          </div>
           <div id="login-error" class="notice error" role="alert" hidden></div>
           <button class="auth-submit" type="submit">登录工作台 ${uiIcon('arrow-right')}</button>
         </form>
-        <div class="auth-divider" style="margin-top:22px">其他操作</div>
-        <p class="auth-help" style="text-align:center;margin-top:12px">
+        <p class="auth-help" style="text-align:center;margin-top:18px">
           <a class="auth-link" href="/password#reset">找回密码</a>
-          <span class="muted"> · </span>
-          <a class="auth-link" href="/password#change">修改密码</a>
         </p>
-        <p class="auth-help" style="margin-top:14px">不同角色登录后会看到对应的工作范围；首次使用请向项目管理员获取账号和密码。</p>
-        <div class="auth-foot">
-          <span>四川大学图书馆志愿服务队</span>
-          <span class="auth-foot-right">© 2026 四川大学图书馆 · 仅限校内授权使用</span>
-        </div>
       </div>
     </section>
   </main>`;

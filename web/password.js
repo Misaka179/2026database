@@ -66,25 +66,41 @@
 
   /* 标签页与 hash 路由：#reset 忘记密码 / #change 修改密码 */
   var tabs = document.querySelectorAll('[data-auth-tab]');
+  var changeTab = document.querySelector('[data-auth-tab="change"]');
+  var resetTab = document.querySelector('[data-auth-tab="reset"]');
+  var token = null;
+  try {
+    token = sessionStorage.getItem('volunteer_token');
+  } catch (error) {
+    token = null;
+  }
+
+  // 未登录时隐藏"修改密码"标签，登录后隐藏"忘记密码"标签
+  if (!token && changeTab) {
+    changeTab.style.display = 'none';
+  }
+  if (token && resetTab) {
+    resetTab.style.display = 'none';
+  }
+
   function syncTabs() {
     var route = window.location.hash === '#change' ? 'change' : 'reset';
+    // 未登录时强制跳转到 reset
+    if (!token && route === 'change') {
+      window.location.hash = '#reset';
+      route = 'reset';
+    }
+    // 登录后强制跳转到 change
+    if (token && route === 'reset') {
+      window.location.hash = '#change';
+      route = 'change';
+    }
     for (var i = 0; i < tabs.length; i++) {
       var tab = tabs[i];
       var selected = tab.getAttribute('data-auth-tab') === route;
       tab.setAttribute('aria-selected', String(selected));
       var panel = document.getElementById(tab.getAttribute('aria-controls'));
       if (panel) panel.hidden = !selected;
-    }
-    if (route === 'change') {
-      var token = null;
-      try {
-        token = sessionStorage.getItem('volunteer_token');
-      } catch (error) {
-        token = null;
-      }
-      if (!token) {
-        showFeedback('change-feedback', '请先返回登录页登录，登录后再修改密码。', 'warning');
-      }
     }
   }
 
@@ -209,12 +225,12 @@
         reason: String(data.get('reason') || '').trim()
       };
       if (!body.account || !body.name) {
-        showFeedback('reset-feedback', '请填写学号/管理员账号与姓名，便于管理员核实身份。', 'error');
+        showFeedback('reset-feedback', '请填写学号/账号与姓名。', 'error');
         return;
       }
       await postJson('/auth/password/reset-request', body);
       resetForm.reset();
-      showFeedback('reset-feedback', '重置申请已提交。管理员核实身份后会为你重置密码，并通过站内通知告知。', 'success');
+      showFeedback('reset-feedback', '重置申请已提交，管理员核实后会通过通知告知新密码。', 'success');
     });
   }
 
@@ -268,7 +284,6 @@
       }
       hideFeedback('change-feedback');
       if (!showChangeDone(identity)) {
-        showFeedback('change-feedback', '密码已更新，请使用新密码重新登录。', 'success');
         window.location.href = '/';
       }
     });
