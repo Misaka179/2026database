@@ -750,8 +750,6 @@ td.wrap {
 
 /* ---------------------------------------------------------------- 对话框 -- */
 dialog {
-  display: flex;
-  flex-direction: column;
   width: min(640px, calc(100% - 32px));
   max-height: calc(100dvh - 48px);
   border-radius: 16px;
@@ -759,6 +757,15 @@ dialog {
   background: var(--surface);
   box-shadow: var(--shadow-3);
   overflow: hidden;
+}
+
+dialog:not([open]) {
+  display: none;
+}
+
+dialog[open] {
+  display: flex;
+  flex-direction: column;
 }
 
 dialog::backdrop {

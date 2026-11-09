@@ -180,8 +180,15 @@ function openDialog(title,subtitle,fields,onSubmit,button='确认提交'){
  dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(title)}</h2><p>${esc(subtitle)}</p></div><button class="close-button" data-action="close">关闭</button></header><div class="dialog-body"><form id="action-form" novalidate><div class="form-grid">${fields}</div><div id="action-error" class="notice error" role="alert" hidden></div><footer class="dialog-footer"><button type="button" class="btn" data-action="close">取消</button><button class="btn primary" type="submit">${esc(button)}</button></footer></form></div>`;
  dialog.showModal();
 }
+function openReadOnlyDialog(title,content){
+ if(modalBusy||dialog.open)return;
+ previousFocus=document.activeElement;modalSubmit=null;modalVersion++;
+ dialog.classList.remove('collection-dialog');
+ dialog.innerHTML=`<header class="dialog-header"><h2 id="dialog-title">${esc(title)}</h2><button class="close-button" type="button" data-action="close">关闭</button></header><div class="dialog-body">${content}</div>`;
+ dialog.showModal();
+}
 function setModalBusy(busy){modalBusy=busy;dialog.querySelectorAll('[data-action="close"]').forEach(button=>button.disabled=busy);}
-function closeDialog(force=false){if(modalBusy&&!force)return;if(!dialog.open&&!modalSubmit)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();modalSubmit=null;const focus=previousFocus;previousFocus=null;focus?.focus?.();}
+function closeDialog(force=false){if(modalBusy&&!force)return;if(!dialog.open&&!modalSubmit)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();dialog.classList.remove('collection-dialog');dialog.innerHTML='';modalSubmit=null;const focus=previousFocus;previousFocus=null;focus?.focus?.();}
 function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength}={}){
  const attrs=`id="f-${name}" name="${name}" ${required?'required':''} ${min!==undefined?`min="${min}"`:''} ${max!==undefined?`max="${max}"`:''} ${step!==undefined?`step="${step}"`:''} ${maxLength?`maxlength="${maxLength}"`:''}`;
  const input=options?`<select ${attrs}>${options.map(([v,t])=>`<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(t)}</option>`).join('')}</select>`:type==='textarea'?`<textarea ${attrs} placeholder="${esc(placeholder)}">${esc(value)}</textarea>`:`<input ${attrs} type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${type==='password'?'autocomplete="new-password"':''}>`;

@@ -350,6 +350,35 @@ for(const role of ['SUPER','NORMAL','STUDENT']) {
 }
 """)
 
+    def test_closed_dialog_clears_content_and_group_members_open_in_modal(self):
+        self.js(r"""
+context.fetch=async()=>response([{name:'张三',student_id:'20260001',effective_from:'2026-09-01',effective_until:null}]);
+run("state.token='current';state.me={name:'管理员'};state.role='NORMAL';state.page='groups';state.data={groups:[{group_id:7,name:'综合运营中心'}]};");
+run("openDialog('旧弹窗','','',()=>Promise.resolve())");
+run('closeDialog()');
+assert.equal(element('#action-dialog').open,false);
+assert.equal(element('#action-dialog').innerHTML,'');
+run('showGroupMembers(7)').then(()=>{
+  assert.equal(element('#action-dialog').open,true);
+  assert.match(element('#action-dialog').innerHTML,/综合运营中心/);
+  assert.match(element('#action-dialog').innerHTML,/张三/);
+  assert.doesNotMatch(element('#main').innerHTML,/张三/);
+  run('closeDialog()');
+  assert.equal(element('#action-dialog').innerHTML,'');
+}).catch(error=>{console.error(error);process.exitCode=1;});
+""")
+
+    def test_group_members_do_not_open_after_navigation(self):
+        self.js(r"""
+let release;
+context.fetch=()=>new Promise(resolve=>{release=resolve;});
+run("state.token='current';state.me={name:'管理员'};state.role='SUPER';state.page='groups';state.data={groups:[{group_id:7,name:'综合运营中心'}]};");
+const pending=run('showGroupMembers(7)');
+run("navigate('overview')");
+release(response([{name:'张三',student_id:'20260001',effective_from:'2026-09-01'}]));
+pending.then(()=>assert.equal(element('#action-dialog').open,false)).catch(error=>{console.error(error);process.exitCode=1;});
+""")
+
     def test_late_unauthorized_response_cannot_sign_out_new_session(self):
         self.js(r"""
 context.fetch=async()=>({ok:false,status:401,json:async()=>({detail:'请重新登录'})});
