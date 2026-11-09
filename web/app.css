@@ -19,7 +19,7 @@ html[data-theme="dark"]{color-scheme:dark;--bg:#17221e;--surface:#1e2c25;--text:
 
 /* Keep query controls aligned independently of the shared help text. */
 .sidebar{overflow-y:auto}.nav-list{flex-shrink:0}.business-filter{margin-bottom:20px}
-.query-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));align-items:end}.query-form .field{min-width:0}.query-form .btn{margin:0;min-height:42px}.query-help{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px}.query-form input{min-width:0;max-width:100%}
+.query-form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:14px}.query-form .field{min-width:0}.query-form .btn{margin:0;min-height:42px}.query-help{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px}.query-form input{min-width:0;max-width:100%}
 @media(max-width:600px){.query-form{grid-template-columns:minmax(0,1fr)}.query-form .btn{width:100%}}
 
 /* Collection publishing keeps its primary action visible independently of long rosters. */

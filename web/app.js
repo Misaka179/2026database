@@ -20,7 +20,7 @@ const nav = [
   ['semesters','学期与日历',['SUPER','NORMAL','STUDENT']],['applications','申请与审批',['SUPER','NORMAL','STUDENT']],['hours','服务时长',['SUPER','STUDENT']],
   ['credit','信用管理',['SUPER','STUDENT']],['basics','基础资料',['SUPER']],['slots','服务班次',['NORMAL']],['logs','操作日志',['SUPER']],['members','本时段队员',['NORMAL']]
 ];
-const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">${uiIcon('inbox')}</div><h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
+const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">${uiIcon('inbox')}</div><h3>${esc(title)}</h3></div>`;
 const badge = (value, override) => `<span class="badge ${['ACTIVE','APPROVED','NORMAL','VALID'].includes(value)?'good':['REJECTED','DISABLED','ABSENT','LATE'].includes(value)?'warning':['PENDING','FIRST_APPROVED'].includes(value)?'pending':''}">${esc(override || label[value] || value || '未登记')}</span>`;
 const fmtDate = value => value ? String(value).replace('T',' ').slice(0,16) : '未记录';
 const hourText = value => `${Number((Number(value || 0)/60).toFixed(2))} 小时`;
@@ -82,7 +82,7 @@ async function refresh(){
  }catch(e){if(!current())return;state.loading=false;state.refreshError=e.message;renderPage();}
 }
 function navigate(page){closeDialog(true);if(state.role==='LEAD'&&!['overview','inbox','lead-workspace'].includes(page)){state.leadTab=page==='hours'?'hours':page==='applications'?'withdrawal':'schedules';page='lead-workspace';}if(state.page!==page){state.inboxSelected=new Set();state.collectionSelections=new Map();}state.page=page;state.tab='';state.search='';state.status='';state.sequence++;document.querySelector('.workspace')?.classList.remove('menu-open');updateNavigation();renderPage();}
-function heading(title,text,button=''){return `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div>${button?`<div class="page-actions">${button}</div>`:''}</div>`;}
+function heading(title,text,button=''){return `<div class="page-heading"><div><h1>${title}</h1></div>${button?`<div class="page-actions">${button}</div>`:''}</div>`;}
 function canFuture(r){return r.status==='ACTIVE'&&new Date(`${r.schedule_date}T${r.start_time}:00+08:00`)>new Date();}
 function isEnded(r){if(r.schedule_kind==='WEEKLY'){const day=new Date(`${r.schedule_date}T00:00:00+08:00`);day.setUTCDate(day.getUTCDate()-6);return day<=new Date();}return new Date(`${r.schedule_date}T${r.end_time}:00+08:00`)<=new Date();}
 function actionable(a,kind){if(kind==='transfer'&&!a.old_slot_id)return false;if(kind==='leave')return state.role==='NORMAL'&&a.approve_status==='PENDING';if(kind==='withdrawal')return state.role==='SUPER'&&a.approve_status==='PENDING'&&!a.requires_first;return state.role==='NORMAL'&&a.first_status==='PENDING'&&a.final_status==='PENDING'||state.role==='SUPER'&&a.first_status==='APPROVED'&&a.final_status==='PENDING';}
@@ -105,9 +105,9 @@ function overview(){
  const d=state.data;const today=getDate();const pending=['leave','transfer','withdrawal'].reduce((n,k)=>n+(d[k]||[]).filter(a=>state.role==='STUDENT'?appStatus(a,k)[0]==='PENDING':actionable(a,k)).length,0);
  const upcoming=d.schedules.filter(r=>canFuture(r)).sort((a,b)=>(a.schedule_date+a.start_time).localeCompare(b.schedule_date+b.start_time));
  const metrics=state.role==='STUDENT'?[['累计服务时长',Number((d.hours.total_minutes/60).toFixed(2)),'小时','按全部有效服务记录汇总'],['当前信用分',d.credit.credit_score,'分',label[d.credit.status]],['待处理申请',pending,'项','请假、换班和退队'],['每周固定班次',(d.memberships||[]).length,'个','可申请长期调整时段']]:[['今日排班',d.schedules.filter(r=>r.schedule_date===today&&r.status!=='CANCELLED').length,'人次','当前权限范围内的安排'],['待处理申请',pending,'项','需要你审批或确认'],['待登记考勤',d.schedules.filter(r=>r.status==='ACTIVE'&&isEnded(r)).length,'次','已结束但尚未登记'],[state.role==='SUPER'?'在队志愿者':'负责服务班次',state.role==='SUPER'?d.students.filter(s=>s.status==='ACTIVE').length:d.slots.filter(s=>s.manager_admin_id===state.me.admin_id).length,state.role==='SUPER'?'人':'个',state.role==='SUPER'?'当前正常参与服务':'仅显示你负责的班次']];
- $('#main').innerHTML=`<section class="welcome"><div><div class="eyebrow">${roleName(state.role)}工作台</div><h1>${esc(state.me.name)}，欢迎回来。</h1><p>${state.role==='STUDENT'?'查看接下来的服务安排，及时跟进你的申请。':'先处理待办，再确认接下来的服务安排。'}</p></div><div class="date-stamp"><strong>${today.slice(5).replace('-',' / ')}</strong>${today.slice(0,4)} 年 · ${new Intl.DateTimeFormat('zh-CN',{weekday:'long',timeZone:'Asia/Shanghai'}).format(new Date())}</div></section><section class="metrics" aria-label="工作概览统计">${metrics.map(([l,v,u,f])=>{const ic={累计服务时长:'clock',当前信用分:'shield',待处理申请:'check',每周固定班次:'calendar',今日排班:'calendar',待登记考勤:'clock',在队志愿者:'users',负责服务班次:'calendar'}[l]||'info';const accent=l==='累计服务时长'||l==='在队志愿者';return `<div class="metric"><div class="metric-label">${uiIcon(ic)}${l}</div><div class="metric-value${accent?' accent':''}">${esc(v)}<small>${u}</small></div><div class="metric-foot">${esc(f)}</div></div>`;}).join('')}</section><div class="overview-grid"><div>${myFixedSlotsPanel()}<section class="panel"><header class="panel-header"><div><h2>接下来的服务</h2><p>按服务日期排序，显示最近五条安排</p></div><button class="text-button" data-page="schedules">查看全部 →</button></header>${scheduleTable(upcoming.slice(0,5),false)}</section><section class="panel"><header class="panel-header"><div><h2>${state.role==='STUDENT'?'申请进度':'审批待办'}</h2><p>${pending?`目前有 ${pending} 项申请等待处理`:'当前没有待处理申请'}</p></div><button class="text-button" data-page="applications">进入申请${state.role==='STUDENT'?'记录':'管理'} →</button></header><div class="panel-content">${pending?`<p class="muted">${state.role==='STUDENT'?'审批结果会显示在申请记录中。换班确认前，请仍按原排班参加服务。':'请先核对申请内容，再进行审批。换班需要初审通过后才能最终确认。'}</p>`:'<p class="muted">新的申请提交后，会出现在这里。</p>'}</div></section></div><div><section class="panel"><header class="panel-header"><h2>常用操作</h2></header><div class="panel-content quick-links">${state.role==='STUDENT'?quick('申请请假或换班','选择对应排班，填写申请原因','schedules'):quick('查看服务安排','核对班次、人员与考勤状态','schedules')}${quick(state.role==='STUDENT'?'查看服务时长':'处理申请',state.role==='STUDENT'?'逐笔查看已认定的服务记录':'请假、换班和退队审批',state.role==='STUDENT'?'hours':'applications')}${state.role!=='STUDENT'?quick('查看服务班次','了解服务时间、地点与人数上限',state.role==='SUPER'?'basics':'slots'):''}</div></section><section class="panel panel-quiet"><header class="panel-header"><h2>工作提示</h2></header><div class="panel-content"><p class="rule-note">请假获批后不计服务时长，也不按缺勤扣分。</p><p class="rule-note">正常出勤和迟到均计完整班次时长。考勤需在班次结束后登记。</p><p class="rule-note">${state.role==='STUDENT'?'排班调整须等待最终确认，信用分归零后将暂停后续服务安排。':'重要修改会留下操作记录，便于后续核对。'}</p></div></section></div></div>`;
+ $('#main').innerHTML=`<section class="welcome"><div><div class="eyebrow">${roleName(state.role)}工作台</div><h1>${esc(state.me.name)}，欢迎回来。</h1></div><div class="date-stamp"><strong>${today.slice(5).replace('-',' / ')}</strong>${today.slice(0,4)} 年 · ${new Intl.DateTimeFormat('zh-CN',{weekday:'long',timeZone:'Asia/Shanghai'}).format(new Date())}</div></section><section class="metrics" aria-label="工作概览统计">${metrics.map(([l,v,u,f])=>{const ic={累计服务时长:'clock',当前信用分:'shield',待处理申请:'check',每周固定班次:'calendar',今日排班:'calendar',待登记考勤:'clock',在队志愿者:'users',负责服务班次:'calendar'}[l]||'info';const accent=l==='累计服务时长'||l==='在队志愿者';return `<div class="metric"><div class="metric-label">${uiIcon(ic)}${l}</div><div class="metric-value${accent?' accent':''}">${esc(v)}<small>${u}</small></div></div>`;}).join('')}</section><div class="overview-grid"><div>${myFixedSlotsPanel()}<section class="panel"><header class="panel-header"><div><h2>接下来的服务</h2></div><button class="text-button" data-page="schedules">查看全部 →</button></header>${scheduleTable(upcoming.slice(0,5),false)}</section><section class="panel"><header class="panel-header"><div><h2>${state.role==='STUDENT'?'申请进度':'审批待办'}</h2></div><button class="text-button" data-page="applications">进入申请${state.role==='STUDENT'?'记录':'管理'} →</button></header></section></div><div><section class="panel"><header class="panel-header"><h2>常用操作</h2></header><div class="panel-content quick-links">${state.role==='STUDENT'?quick('申请请假或换班','选择对应排班，填写申请原因','schedules'):quick('查看服务安排','核对班次、人员与考勤状态','schedules')}${quick(state.role==='STUDENT'?'查看服务时长':'处理申请',state.role==='STUDENT'?'逐笔查看已认定的服务记录':'请假、换班和退队审批',state.role==='STUDENT'?'hours':'applications')}${state.role!=='STUDENT'?quick('查看服务班次','了解服务时间、地点与人数上限',state.role==='SUPER'?'basics':'slots'):''}</div></section></div></div>`;
 }
-function quick(title,text,page){return `<button class="quick-link" data-page="${page}"><div><strong>${title}</strong><span>${text}</span></div><em aria-hidden="true">→</em></button>`;}
+function quick(title,text,page){return `<button class="quick-link" data-page="${page}"><div><strong>${title}</strong></div><em aria-hidden="true">→</em></button>`;}
 function scheduleTable(records,actions=true){return table(['服务日期','志愿者','服务班次','状态',...(actions?['操作']:[])],records.map(r=>`<tr><td><strong>${esc(r.schedule_date)}</strong><small>${r.week_no?`第 ${r.week_no} 周 · `:''}${r.schedule_kind==='WEEKLY'?'周日为统计归属日':r.schedule_kind==='EVENT'?'非固定服务':esc(r.start_time)+' 至 '+esc(r.end_time)}</small></td><td>${esc(studentName(r.student_id))}<small>${esc(r.student_id)}</small></td><td><strong>${esc(slotName(r.slot_id))}</strong><small>${esc(r.location)}</small></td><td>${badge(r.attendance_status||r.status)}${r.attendance_source==='AUTO_WEEKLY'?'<small>按周自动结算</small>':''}${r.leave_approved&&!r.attendance_status?'<small>请假已获批</small>':''}</td>${actions?`<td><div class="row-actions">${scheduleActions(r)}</div></td>`:''}</tr>`),'暂无具体日期排班','设置学期后按固定时段生成，用于请假及考勤。');}
 function scheduleActions(r){
  if(r.schedule_kind==='EVENT')return state.role==='SUPER'&&r.status==='ACTIVE'&&r.source_key?.startsWith('manual:')&&r.schedule_date<=getDate()?`<button class="text-button" data-action="event-confirm" data-id="${r.schedule_id}">认定本次时长</button>`:'<span class="muted">已认定记录可在服务时长中修正</span>';
@@ -146,10 +146,10 @@ function queryStudent(){
  const result=state.page==='hours'?$('#hours-result'):$('#credit-result');
  result.innerHTML=matches.length?`<div class="section-footer">找到 ${matches.length} 位志愿者，请核对学号后选择。</div>`+table(['姓名','学号','状态','操作'],matches.map(s=>`<tr><td>${esc(s.name)}</td><td>${esc(s.student_id)}</td><td>${badge(s.status,s.status==='ACTIVE'?'在队':label[s.status])}</td><td><button type="button" class="text-button" data-action="query-student-pick" data-id="${esc(s.student_id)}">查看记录</button></td></tr>`)):empty(state.studentQuery?'未找到志愿者':'请输入学号或姓名',state.studentQuery?'请检查输入，或尝试部分学号、姓名。':'填写查询条件后点击“查询记录”。');
 }
-function queryForm(includeDates){return `<form class="query-form" id="query-form" novalidate>${state.role==='SUPER'?`<div class="field"><label for="query-student">志愿者</label>${studentSelect()}</div>`:''}${includeDates?`<div class="field"><label for="query-start">开始日期</label><input id="query-start" name="start" type="date" value="${state.from}"></div><div class="field"><label for="query-end">结束日期（不含当天）</label><input id="query-end" name="end" type="date" value="${state.to}"></div>`:''}<button class="btn primary" type="submit">查询记录</button>${state.role==='SUPER'?'<p class="query-help" id="student-query-help">支持部分学号或姓名；匹配多人时请按学号选择。</p>':''}</form>`;}
+function queryForm(includeDates){return `<form class="query-form" id="query-form" novalidate>${state.role==='SUPER'?`<div class="field"><label for="query-student">志愿者</label>${studentSelect()}</div>`:''}${includeDates?`<div class="field"><label for="query-start">开始日期</label><input id="query-start" name="start" type="date" value="${state.from}"></div><div class="field"><label for="query-end">结束日期（不含当天）</label><input id="query-end" name="end" type="date" value="${state.to}"></div>`:''}<button class="btn primary" type="submit">查询记录</button></form>`;}
 async function hoursPage(){
  const seq=++state.sequence;
- $('#main').innerHTML=heading('服务时长','按实际认定的有效记录汇总，可选择日期范围查看。',state.role==='SUPER'?'<button class="btn" data-action="hours-export">导出学期周时长</button>':'')+queryForm(true)+businessFilter()+groupFilter()+'<section class="panel" id="hours-result"><div class="loading" role="status">正在读取服务记录…</div></section>';
+ $('#main').innerHTML=heading('服务时长','按实际认定的有效记录汇总，可选择日期范围查看。',state.role==='SUPER'?'<button class="btn" data-action="hours-export">导出学期周时长</button>':'')+queryForm(true)+'<div class="filter-row">'+businessFilter()+groupFilter()+'</div><section class="panel" id="hours-result"><div class="loading" role="status">正在读取服务记录…</div></section>';
  if(state.role==='SUPER'&&!state.selectedStudent){$('#hours-result').innerHTML=empty('请输入学号或姓名','查询志愿者后查看服务时长。');return;}
  const query=new URLSearchParams();if(state.role==='SUPER')query.set('student_id',state.selectedStudent);if(state.from)query.set('start',state.from);if(state.to)query.set('end',state.to);if(state.businessId)query.set('business_id',state.businessId);if(state.groupId!==undefined&&state.groupId!=='')query.set('group_id',state.groupId);
  try{const data=await request('/hours?'+query);if(seq!==state.sequence)return;state.data.hourRecords=data.records;$('#hours-result').innerHTML=queriedStudentLabel()+`<div class="summary-line"><strong>${Number((data.total_minutes/60).toFixed(2))}</strong><span>累计小时 · ${data.records.filter(r=>r.record_status==='VALID').length} 条有效记录</span></div><p class="section-footer">${(data.group_totals||data.business_totals||[]).map(b=>esc(b.business_name)+(b.group_name?' / '+esc(b.group_name):'')+'：'+hourText(b.total_minutes)).join('；')}</p>${table(['服务日期','服务班次','考勤结果','认定时长','记录状态',...(state.role==='SUPER'?['操作']:[])],data.records.map(r=>`<tr><td>${esc(r.schedule_date)}${r.schedule_kind==='WEEKLY'?'<small>周日统计归属日，非实际日期</small>':''}</td><td>${esc(r.business_name||'')}${r.group_name?' / '+esc(r.group_name):''}<small>${esc(slotName(r.slot_id))}</small></td><td>${badge(r.attendance_status)}</td><td><strong>${hourText(r.service_minutes)}</strong></td><td>${badge(r.record_status)}</td>${state.role==='SUPER'?`<td><button class="text-button" data-action="hours-edit" data-id="${r.record_id}">修正时长</button></td>`:''}</tr>`),'暂无服务记录','正常出勤或迟到完成登记后，认定时长将显示在这里。')}`;}catch(e){if(seq===state.sequence)$('#hours-result').innerHTML=`<p class="notice error">${esc(e.message)}</p>`;}
@@ -160,7 +160,7 @@ async function creditPage(){
  if(kind==='credit'&&state.role==='SUPER'&&!state.selectedStudent){$('#credit-result').innerHTML=empty('请输入学号或姓名','查询志愿者后查看信用流水或调整信用分。');return;}
  try{if(kind==='rules'){const records=await request('/credit-rules');if(seq!==state.sequence)return;state.data.rules=records;$('#credit-result').innerHTML=table(['违规类型','规则版本','扣分标准','状态','创建时间'],records.map(r=>`<tr><td><strong>${label[r.violation_type]}</strong></td><td>第 ${r.version} 版</td><td>${r.deduct_score} 分</td><td>${badge(r.status,r.status==='ACTIVE'?'当前生效':'历史版本')}</td><td>${fmtDate(r.create_time)}</td></tr>`));return;}
  const data=await request('/credit'+(state.role==='SUPER'?'?student_id='+encodeURIComponent(state.selectedStudent):''));if(seq!==state.sequence)return;state.data.selectedCredit=data;
- $('#credit-result').innerHTML=queriedStudentLabel()+`<div class="summary-line"><strong>${data.credit_score}</strong><span>当前信用分</span>${state.role==='SUPER'?'<button class="btn primary" data-action="credit-set">调整信用分</button>':''}${badge(data.status,data.status==='ACTIVE'?'正常参与服务':label[data.status])}</div>${table(['发生时间','变更类型与原因','变化前','实际变动','变化后'],data.logs.map(r=>`<tr><td>${fmtDate(r.change_time)}</td><td class="wrap">${esc(({DEDUCTION:'考勤扣分',REVERSAL:'考勤冲正',MANUAL_SET:'超管调分'})[r.entry_type]||'信用变更')}<small>${esc(label[r.change_reason]||r.change_reason)}</small></td><td>${r.before_score} 分</td><td><strong>${r.change_score>0?'+':''}${r.change_score} 分</strong></td><td>${r.after_score} 分</td></tr>`),'暂无信用变动','当前没有扣分流水。信用分变化后，可在这里逐笔核对。')}<div class="section-footer">信用分最低为 0 分。实际扣分可能小于规则扣分，归零后将暂停后续服务安排。</div>`;
+ $('#credit-result').innerHTML=queriedStudentLabel()+`<div class="summary-line"><strong>${data.credit_score}</strong><span>当前信用分</span>${state.role==='SUPER'?'<button class="btn primary" data-action="credit-set">调整信用分</button>':''}${badge(data.status,data.status==='ACTIVE'?'正常参与服务':label[data.status])}</div>${table(['发生时间','变更类型与原因','变化前','实际变动','变化后'],data.logs.map(r=>`<tr><td>${fmtDate(r.change_time)}</td><td class="wrap">${esc(({DEDUCTION:'考勤扣分',REVERSAL:'考勤冲正',MANUAL_SET:'超管调分'})[r.entry_type]||'信用变更')}<small>${esc(label[r.change_reason]||r.change_reason)}</small></td><td>${r.before_score} 分</td><td><strong>${r.change_score>0?'+':''}${r.change_score} 分</strong></td><td>${r.after_score} 分</td></tr>`),'暂无信用变动','当前没有扣分流水。信用分变化后，可在这里逐笔核对。')}</div>`;
  }catch(e){if(seq===state.sequence)$('#credit-result').innerHTML=`<p class="notice error">${esc(e.message)}</p>`;}
 }
 function slotTable(){if(state.data.slots.some(s=>s.weekday))return fixedSlotTable();return table(['服务班次','服务时间','地点','人数上限','标准时长','负责人'],state.data.slots.map(r=>`<tr><td><strong>${esc(r.team_name)}</strong><small>第 ${r.period_no} 时段 ${r.status==='DISABLED'?'（已停用）':''}</small></td><td>${esc(r.start_time)} 至 ${esc(r.end_time)}</td><td>${esc(r.location)}</td><td>${r.need_num} 人</td><td>${hourText(r.service_minutes)}</td><td>${esc(adminName(r.manager_admin_id))}</td></tr>`),'暂无服务班次','由超级管理员添加班次和负责人后显示。');}
@@ -178,7 +178,7 @@ function openDialog(title,subtitle,fields,onSubmit,button='确认提交'){
  if(modalBusy)return;
  previousFocus=document.activeElement;modalSubmit=onSubmit;modalVersion++;
  dialog.classList.remove('collection-dialog');
- dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(title)}</h2><p>${esc(subtitle)}</p></div><button class="close-button" data-action="close">关闭</button></header><div class="dialog-body"><form id="action-form" novalidate><div class="form-grid">${fields}</div><div id="action-error" class="notice error" role="alert" hidden></div><footer class="dialog-footer"><button type="button" class="btn" data-action="close">取消</button><button class="btn primary" type="submit">${esc(button)}</button></footer></form></div>`;
+ dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(title)}</h2></div><button class="close-button" data-action="close">关闭</button></header><div class="dialog-body"><form id="action-form" novalidate><div class="form-grid">${fields}</div><div id="action-error" class="notice error" role="alert" hidden></div><footer class="dialog-footer"><button type="button" class="btn" data-action="close">取消</button><button class="btn primary" type="submit">${esc(button)}</button></footer></form></div>`;
  dialog.showModal();
 }
 function openReadOnlyDialog(title,content){
@@ -190,17 +190,18 @@ function openReadOnlyDialog(title,content){
 }
 function setModalBusy(busy){modalBusy=busy;dialog.querySelectorAll('[data-action="close"]').forEach(button=>button.disabled=busy);}
 function closeDialog(force=false){if(modalBusy&&!force)return;if(!dialog.open&&!modalSubmit)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();dialog.classList.remove('collection-dialog');dialog.innerHTML='';modalSubmit=null;const focus=previousFocus;previousFocus=null;focus?.focus?.();}
-function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength}={}){
+function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength,icon}={}){
  const attrs=`id="f-${name}" name="${name}" ${required?'required':''} ${min!==undefined?`min="${min}"`:''} ${max!==undefined?`max="${max}"`:''} ${step!==undefined?`step="${step}"`:''} ${maxLength?`maxlength="${maxLength}"`:''}`;
- const input=options?`<select ${attrs}>${options.map(([v,t])=>`<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(t)}</option>`).join('')}</select>`:type==='textarea'?`<textarea ${attrs} placeholder="${esc(placeholder)}">${esc(value)}</textarea>`:`<input ${attrs} type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${type==='password'?'autocomplete="new-password"':''}>`;
- return `<div class="field ${full?'full':''}"><label for="f-${name}">${esc(title)}${!required?'<span class="required-label">选填</span>':''}</label>${input}${help?`<small>${esc(help)}</small>`:''}</div>`;
+ const inputElement=options?`<select ${attrs}>${options.map(([v,t])=>`<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(t)}</option>`).join('')}</select>`:type==='textarea'?`<textarea ${attrs} placeholder="${esc(placeholder)}">${esc(value)}</textarea>`:`<input ${attrs} type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${type==='password'?'autocomplete="new-password"':''}>`;
+ const content = icon ? `<div class="auth-control">${uiIcon(icon, 'lead')}${inputElement}</div>` : inputElement;
+ return `<div class="field ${full?'full':''}"><label for="f-${name}">${esc(title)}${!required?'<span class="required-label">选填</span>':''}</label>${content}</div>`;
 }
 const reasonField=()=>field('reason','原因说明',{type:'textarea',full:true,maxLength:500,placeholder:'请填写具体原因，便于审批和后续核对'});
 function changePasswordDialog(){
- return openDialog('修改密码','验证当前密码后设置新密码；修改成功后请牢记新密码。',
-  field('current_password','当前密码',{type:'password',full:true,maxLength:128,placeholder:'请输入当前密码'})+
-  field('new_password','新密码',{type:'password',full:true,maxLength:128,placeholder:'8 至 128 个字符'})+
-  field('confirm_password','确认新密码',{type:'password',full:true,maxLength:128,placeholder:'请再次输入新密码'}),
+ return openDialog('修改密码','',
+  field('current_password','当前密码',{type:'password',full:true,maxLength:128,placeholder:'请输入当前密码',icon:'lock'})+
+  field('new_password','新密码',{type:'password',full:true,maxLength:128,placeholder:'请输入新密码',icon:'lock'})+
+  field('confirm_password','确认新密码',{type:'password',full:true,maxLength:128,placeholder:'请再次输入新密码',icon:'lock'}),
   async v=>{
    if(v.new_password!==v.confirm_password)throw new Error('两次输入的新密码不一致。');
    if(v.new_password===v.current_password)throw new Error('密码与原密码一致，请设置不同的新密码');
@@ -212,6 +213,7 @@ function changePasswordDialog(){
 function scheduleOptions(){return state.data.schedules.filter(canFuture).map(r=>[r.schedule_id,`${r.schedule_date} ${slotName(r.slot_id)}`]);}
 function action(name,id,kind){
  if(name==='menu-close'){document.querySelector('.workspace')?.classList.remove('menu-open');return;}
+ if(name==='sidebar-toggle'){const w=document.querySelector('.workspace');w?.classList.toggle('sidebar-collapsed');try{localStorage.setItem('volunteer_sidebar_collapsed',w?.classList.contains('sidebar-collapsed')?'1':'0');}catch{}return;}
  if(modalBusy)return;
  if(name==='change-password')return changePasswordDialog();
  if(leaderAction(name,id)||directoryAction(name,id)||governanceAction(name,id,kind)||businessAction(name,id,kind)||semesterAction(name,id)||rosterAction(name,id))return;
@@ -408,40 +410,33 @@ function loginView() {
   state.role = null;
   app.innerHTML = `<main class="auth-page" id="main">
     <section class="auth-hero" aria-label="系统简介">
-      <p class="auth-hero-top">图书馆志愿服务管理系统</p>
+      <p class="auth-hero-top">四川大学图书馆志愿服务队管理系统</p>
       <div class="auth-hero-main">
         <div class="auth-brand">
           <span class="auth-brand-tile">${uiIcon('book')}</span>
           <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
         </div>
         <span class="auth-chip">志愿服务 · 一站式管理</span>
-        <h1 class="auth-headline">把每一次志愿服务，<br>安排妥当。</h1>
-        <p class="auth-lead">从排班与考勤，到请假审批、服务时长与信用记录，在同一处完成日常管理，每一步都可追溯。</p>
+        <h1 class="auth-headline">把每一次志愿服务，安排妥当。</h1>
         <div class="auth-features">
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('calendar')}</span>
-            <span><strong>排班与考勤</strong><small>按学期日历自动生成，结束后登记出勤。</small></span>
+            <span><strong>排班与考勤</strong></span>
           </div>
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('check')}</span>
-            <span><strong>申请与审批</strong><small>请假、长期换班和退队，进度清晰可查。</small></span>
+            <span><strong>申请与审批</strong></span>
           </div>
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('clock')}</span>
-            <span><strong>时长与信用</strong><small>逐笔记录，保留每次变更的依据。</small></span>
+            <span><strong>时长与信用</strong></span>
           </div>
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('users')}</span>
-            <span><strong>分队与负责人</strong><small>按业务与小组分工，权限范围明确。</small></span>
+            <span><strong>分队与负责人</strong></span>
           </div>
         </div>
-        <div class="auth-stats" aria-label="系统概况">
-          <div class="auth-stat"><strong>335</strong><small>在册志愿者</small></div>
-          <div class="auth-stat"><strong>7,035</strong><small>累计服务小时</small></div>
-          <div class="auth-stat"><strong>35</strong><small>固定服务时段</small></div>
-        </div>
       </div>
-      <p class="auth-quote">${uiIcon('book')}以书为伴，以服务为荣 —— 四川大学图书馆志愿服务队</p>
     </section>
     <section class="auth-panel">
       <button class="theme-button auth-theme" type="button" data-action="theme" aria-label="切换外观">
@@ -454,7 +449,6 @@ function loginView() {
           <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
         </div>
         <h2>欢迎回来</h2>
-        <p class="auth-sub">使用你的账号登录工作台。</p>
         <form class="auth-form" id="login-form" novalidate>
           <div class="auth-field">
             <label for="login-kind">登录身份</label>
@@ -473,13 +467,11 @@ function loginView() {
               ${uiIcon('user', 'lead')}
               <input id="login-account" name="account" type="text" autocomplete="username"
                      placeholder="请输入管理员账号或学号" required maxlength="64">
-              <span class="trail">${uiIcon('help')}</span>
             </div>
           </div>
           <div class="auth-field">
             <div class="auth-label-row">
               <label for="login-password">密码</label>
-              <a class="auth-link" href="/password#reset">忘记密码？</a>
             </div>
             <div class="auth-control">
               ${uiIcon('lock', 'lead')}
@@ -493,22 +485,12 @@ function loginView() {
               </span>
             </div>
           </div>
-          <div class="auth-row">
-            <span class="auth-help">登录有效期 1 小时</span>
-            <a class="auth-link" href="/password#reset">无法登录？联系队伍组</a>
-          </div>
           <div id="login-error" class="notice error" role="alert" hidden></div>
           <button class="auth-submit" type="submit">登录工作台 ${uiIcon('arrow-right')}</button>
         </form>
-        <div class="auth-divider" style="margin-top:22px">其他操作</div>
-        <p class="auth-help" style="text-align:center;margin-top:12px">
+        <p class="auth-help" style="text-align:center;margin-top:18px">
           <a class="auth-link" href="/password#reset">找回密码</a>
         </p>
-        <p class="auth-help" style="margin-top:14px">不同角色登录后会看到对应的工作范围；首次使用请向项目管理员获取账号和密码。</p>
-        <div class="auth-foot">
-          <span>四川大学图书馆志愿服务队</span>
-          <span class="auth-foot-right">© 2026 四川大学图书馆 · 仅限校内授权使用</span>
-        </div>
       </div>
     </section>
   </main>`;
@@ -523,15 +505,10 @@ function buildShell() {
         <span class="brand-mark" aria-hidden="true">${uiIcon('book')}</span>
         <span><strong>图书馆志愿服务</strong><small>管理工作台</small></span>
       </a>
+      <button class="sidebar-collapse-btn" type="button" data-action="sidebar-toggle" aria-label="折叠或展开导航">${uiIcon('chevron-right')}</button>
       <div class="nav-label">日常工作</div>
       <nav class="nav-list">${navigationHtml(available)}</nav>
       <div class="sidebar-bottom">
-        <button class="side-action" type="button" data-action="change-password">${uiIcon('key')}修改密码</button>
-        <a href="/docs">${uiIcon('external')}中文接口说明</a>
-        <div class="profile">
-          <span class="avatar" aria-hidden="true">${esc(state.me.name.slice(0, 1))}</span>
-          <span><strong>${esc(state.me.name)}</strong><small>${roleName(state.role)}</small></span>
-        </div>
         <button class="text-button" style="text-align:left" data-action="logout">退出登录</button>
       </div>
     </aside>
@@ -543,25 +520,20 @@ function buildShell() {
           <div class="breadcrumb"><span>管理工作台</span><span>/</span><strong id="breadcrumb-title">工作概览</strong></div>
         </div>
         <div class="topbar-actions">
-          <span class="connection" id="connection">正在连接</span>
-          <button class="theme-button" data-action="theme">
-            <span data-theme-icon>${uiIcon('moon')}</span>
-            <span data-theme-label>${themeText()}</span>
-          </button>
+          <button class="icon-button" data-action="theme" title="切换主题"><span data-theme-icon>${uiIcon('moon')}</span></button>
+          <div class="profile">
+            <span class="avatar" aria-hidden="true">${esc(state.me.name.slice(0, 1))}</span>
+            <span><strong>${esc(state.me.name)}</strong></span>
+          </div>
+          <button class="icon-button" data-action="change-password" title="修改密码">${uiIcon('key')}</button>
+          <button class="icon-button" data-action="logout" title="退出登录">${uiIcon('logout')}</button>
         </div>
       </header>
       <main class="main-content" id="main" tabindex="-1"></main>
     </div>
   </div>`;
+  try{if(localStorage.getItem('volunteer_sidebar_collapsed')==='1')document.querySelector('.workspace')?.classList.add('sidebar-collapsed');}catch{}
   startInboxPolling();
-  request('/health').then(() => {
-    if ($('#connection')) $('#connection').textContent = '服务连接正常';
-  }).catch(() => {
-    if ($('#connection')) {
-      $('#connection').textContent = '服务连接中断';
-      $('#connection').classList.add('failed');
-    }
-  });
 }
 
 try {

@@ -427,12 +427,18 @@
   gap: 10px;
   flex-wrap: wrap;
   min-width: 0;
+  flex: 1;
 }
 
 .filter-group .control {
   width: auto;
-  max-width: 240px;
   min-height: 38px;
+}
+
+.filter-group input.control#search {
+  flex: 1 1 0;
+  min-width: 200px;
+  width: 100%;
 }
 
 .filter-group input.control {
@@ -457,7 +463,6 @@
 
 .query-form .field {
   flex: 1 1 200px;
-  max-width: 320px;
   min-width: 0;
 }
 
@@ -470,6 +475,26 @@
 .query-form .btn {
   flex: 0 0 auto;
   min-height: 40px;
+}
+
+.filter-row {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: -4px 0 18px;
+}
+
+.filter-row .field {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.filter-row .field > label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-bottom: 6px;
+  display: block;
 }
 
 .query-help {
