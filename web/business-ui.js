@@ -75,7 +75,7 @@ function businessAction(name,id,kind){
   openDialog(`${r.business_name} · 第 ${r.week_no} 周`,'停工会撤销该周时长和对应考勤扣分；历史周只有超级管理员可以更正。',field('working','本周安排',{options:[['true','正常上工'],['false','本周停工']],value:String(Boolean(r.working)),full:true})+reasonField(),v=>send(`/businesses/${r.business_id}/semesters/${state.businessTerm}/weeks/${r.week_no}`,{working:v.working==='true',reason:v.reason},'PUT'));return true;
  }
  if(name==='garden-confirm'){openDialog('确认开心花园本周服务','确认已完成本周服务，认定90分钟。本周A/B岗位调整不会重复计时；日期归属当周周日。',reasonField(),v=>send(`/schedules/${id}/confirm-weekly`,v));return true;}
- if(name==='collection-create'){openCollectionCreate();return true;}
+ if(name==='collection-create'){console.log('[DEBUG] businessAction collection-create called');openCollectionCreate();return true;}
  if(name==='collection-file'){showCollectionFile(id,kind);return true;}
  if(name==='submission-file'){showSubmissionFile(id,kind);return true;}
  if(name==='collection-close'){openDialog('结束时长征集','结束后停止新增申报和修改重报，已提交的申报继续审批。',reasonField(),v=>send(`/hour-collections/${id}/close`,v),'确认结束');return true;}

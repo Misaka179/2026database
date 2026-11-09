@@ -239,6 +239,7 @@ function action(name,id,kind){
  if(name==='new-application')return action((state.tab||'leave')==='transfer'?'transfer':'leave');
  if(name==='withdrawal')return openDialog('申请退出志愿队','获批后将取消未来未开始的排班，历史服务和信用记录会保留。',reasonField(),v=>send('/applications/withdrawal',v),'提交退队申请');
  if(name==='schedule'){
+  console.log('[DEBUG] schedule action called');
   const slots=state.data.slots.filter(s=>!['WEEKLY','EVENT'].includes(s.schedule_kind)&&s.status==='ACTIVE'&&(state.role==='SUPER'||s.manager_admin_id===state.me.admin_id));
   if(!slots.length)return notify('当前没有可管理的有效班次，请先建立班次。',true);
   return openDialog('新增排班','系统会检查该日期的班次容量及志愿者时间冲突。',(state.role==='SUPER'?field('student_id','志愿者',{options:state.data.students.filter(s=>s.status==='ACTIVE').map(s=>[s.student_id,`${s.name}（${s.student_id}）`]),full:true}):field('student_id','志愿者学号',{full:true,maxLength:32}))+field('slot_id','服务班次',{options:slots.map(s=>[s.slot_id,`${slotName(s.slot_id)}`]),full:true})+field('schedule_date','服务日期',{type:'date',min:getDate(),full:true}),v=>send('/schedules',{...v,slot_id:Number(v.slot_id)}),'确认排班');
@@ -310,7 +311,7 @@ document.addEventListener('click',async e=>{
  if(name==='refresh')return refresh();
  if(name==='query-student-pick'&&state.role==='SUPER'){const student=rowsOf(state.data.students,'student_id',target.dataset.id);if(!student)return;state.selectedStudent=student.student_id;state.studentQuery=student.student_id;return renderPage();}
  if(name==='search'){state.search=$('#search').value.trim();state.status=$('#status-filter').value;state.week=$('#week-filter')?.value||'current';return schedulesPage();}
- try{action(name,target.dataset.id,target.dataset.kind);}catch{notify('操作暂时无法打开，请刷新后重试。',true);}
+ try{action(name,target.dataset.id,target.dataset.kind);}catch(e){console.error('[ERROR] action failed:',name,e);notify('操作失败：' + e.message,true);}
 });
 dialog.addEventListener('cancel',e=>{e.preventDefault();if(!modalBusy)closeDialog();});
 document.addEventListener('submit',async e=>{

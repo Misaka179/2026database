@@ -4,11 +4,11 @@
  */
 'use strict';
 
-// 保存原有的 businessesPage 引用
-const _originalBusinessesPage = businessesPage;
+// 保存原有的 businessesPage 引用（延迟保存）
+let _originalBusinessesPage = null;
 
 // 扩展的 businessesPage 函数
-function businessesPage(){
+const _newBusinessesPage = function businessesPage(){
   const tab = state.tab || 'list';
 
   // 第3层：班次队员列表
@@ -42,8 +42,15 @@ function businessesPage(){
   }
 
   // 其他情况：调用原函数
-  _originalBusinessesPage();
+  if(_originalBusinessesPage) _originalBusinessesPage();
+};
+
+// 在第一次调用时保存原函数
+if(typeof businessesPage === 'function'){
+  _originalBusinessesPage = businessesPage;
 }
+// 替换为新函数
+window.businessesPage = _newBusinessesPage;
 
 // 第1层：业务列表（增强版，添加"查看班次/小组"按钮）
 async function renderBusinessListEnhanced(){
@@ -332,13 +339,17 @@ function viewStudentProfileQuick(studentId){
 }
 
 // 扩展businessAction函数
-const _originalBusinessAction = businessAction;
-function businessAction(name, id, kind){
+let _originalBusinessAction = null;
+if(typeof businessAction === 'function'){
+  _originalBusinessAction = businessAction;
+}
+
+window.businessAction = function businessAction(name, id, kind){
   // 第1层 → 第2层：查看班次
   if(name === 'view-business-slots'){
     state.businessId = id;
     state.tab = 'slots';
-    businessesPage();
+    window.businessesPage();
     return true;
   }
 
@@ -346,7 +357,7 @@ function businessAction(name, id, kind){
   if(name === 'view-business-groups'){
     state.businessId = id;
     state.tab = 'groups';
-    businessesPage();
+    window.businessesPage();
     return true;
   }
 
@@ -354,7 +365,7 @@ function businessAction(name, id, kind){
   if(name === 'view-slot-members'){
     state.slotId = id;
     state.tab = 'slot-members';
-    businessesPage();
+    window.businessesPage();
     return true;
   }
 
@@ -362,7 +373,7 @@ function businessAction(name, id, kind){
   if(name === 'view-group-members'){
     state.groupId = id;
     state.tab = 'group-members';
-    businessesPage();
+    window.businessesPage();
     return true;
   }
 
@@ -372,7 +383,7 @@ function businessAction(name, id, kind){
     state.businessId = null;
     state.slotId = null;
     state.groupId = null;
-    businessesPage();
+    window.businessesPage();
     return true;
   }
 
@@ -381,7 +392,7 @@ function businessAction(name, id, kind){
     state.businessId = id;
     state.tab = 'slots';
     state.slotId = null;
-    businessesPage();
+    window.businessesPage();
     return true;
   }
 
@@ -390,7 +401,7 @@ function businessAction(name, id, kind){
     state.businessId = id;
     state.tab = 'groups';
     state.groupId = null;
-    businessesPage();
+    window.businessesPage();
     return true;
   }
 
@@ -434,7 +445,7 @@ function businessAction(name, id, kind){
       }, 'PUT').then(() => {
         // 更新成功后刷新页面
         state.tab = 'slots';
-        businessesPage();
+        window.businessesPage();
       })
     );
     return true;
@@ -451,5 +462,6 @@ function businessAction(name, id, kind){
   }
 
   // 其他操作：调用原始函数
-  return _originalBusinessAction(name, id, kind);
-}
+  if(_originalBusinessAction) return _originalBusinessAction(name, id, kind);
+  return false;
+};

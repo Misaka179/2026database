@@ -24,6 +24,7 @@ async function showCollectionFile(id,collectionId){
 }
 
 function openCollectionCreate(){
+ console.log('[DEBUG] openCollectionCreate called');
  if(!['SUPER','NORMAL'].includes(state.role))return;
  const businesses=(state.data.businesses||[]).filter(b=>b.status!=='ARCHIVED'&&(state.role==='SUPER'||b.can_collect)),events=businesses.filter(b=>b.kind==='EVENT');
  if(!events.length){notify(state.role==='NORMAL'?'请先申请征集管理范围并等待超管批准。':'请先创建非固定业务。',true);return;}
