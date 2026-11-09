@@ -1133,6 +1133,78 @@ dialog[open] {
 }
 
 /* 尊重减少动效偏好 */
+#member-import-results {
+  min-width: 0;
+  max-width: 100%;
+}
+
+#member-import-results .table-wrap {
+  overflow-x: hidden;
+}
+
+#member-import-results table,
+#member-import-results tbody,
+#member-import-results tr,
+#member-import-results td {
+  display: block;
+  width: 100%;
+}
+
+#member-import-results thead {
+  display: none;
+}
+
+#member-import-results tr {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 18px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+#member-import-results td {
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+#member-import-results td:last-child {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+
+#member-import-results td:last-child label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+#member-import-results input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  flex: none;
+  margin: 0;
+}
+
+#member-import-results input[data-row-id] {
+  width: min(190px, 100%);
+  min-width: 0;
+}
+
+@media (max-width: 520px) {
+  #member-import-results tr {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
   .btn,

@@ -314,6 +314,42 @@ assert.doesNotThrow(()=>run("navigate('schedules')"));
 assert.equal(run('state.page'),'schedules');
 """)
 
+    def test_navigation_closes_import_dialog_and_limits_entry_to_super(self):
+        self.js(r"""
+run("state.me={name:'管理员',admin_id:1};state.role='SUPER';state.data={};");
+run("openDialog('导入业务／小组名单','','',()=>Promise.resolve())");
+assert.equal(element('#action-dialog').open,true);
+run("navigate('schedules')");
+assert.equal(element('#action-dialog').open,false);
+assert.equal(run('modalSubmit'),null);
+run("openDialog('导入业务／小组名单','','',()=>Promise.resolve())");
+const tab={dataset:{tab:'rules'},closest(){return this;}};
+documentHandlers.get('click')({target:tab});
+assert.equal(element('#action-dialog').open,false);
+assert.equal(run('modalSubmit'),null);
+run("openDialog('导入业务／小组名单','','',()=>Promise.resolve())");
+assert.equal(element('#action-dialog').open,true);
+const close={dataset:{action:'close'},closest(){return this;}};
+documentHandlers.get('click')({target:close});
+assert.equal(element('#action-dialog').open,false);
+run("openDialog('导入业务／小组名单','','',()=>Promise.resolve())");
+let prevented=false;
+element('#action-dialog').listeners.cancel({preventDefault(){prevented=true;}});
+assert.equal(prevented,true);
+assert.equal(element('#action-dialog').open,false);
+run("openDialog('导入业务／小组名单','','',()=>Promise.resolve())");
+run('closeDialog()');
+assert.equal(element('#action-dialog').open,false);
+run("openMemberImport=()=>{throw new Error('不应打开导入弹窗')}");
+for(const role of ['SUPER','NORMAL','STUDENT']) {
+  run(`state.role='${role}';state.data={groups:[]};groupsPage()`);
+  const html=element('#main').innerHTML;
+  assert.equal(html.includes('data-action="member-import"'),role==='SUPER');
+  assert.equal(element('#action-dialog').open,false);
+  if(role!=='SUPER')assert.doesNotThrow(()=>run("directoryAction('member-import')"));
+}
+""")
+
     def test_late_unauthorized_response_cannot_sign_out_new_session(self):
         self.js(r"""
 context.fetch=async()=>({ok:false,status:401,json:async()=>({detail:'请重新登录'})});

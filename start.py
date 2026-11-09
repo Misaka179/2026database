@@ -44,7 +44,7 @@ def environment_python(environment: Path) -> Path | None:
     """Return the Python executable inside a virtual/conda environment directory."""
     if not environment.is_dir():
         return None
-    candidates = [environment / 'python.exe'] if os.name == 'nt' else []
+    candidates = [environment / 'python.exe', environment / 'Scripts' / 'python.exe'] if os.name == 'nt' else []
     candidates += [environment / 'bin' / 'python', environment / 'bin' / 'python3']
     for candidate in candidates:
         if candidate.is_file():

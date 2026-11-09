@@ -80,7 +80,7 @@ async function refresh(){
   renderPage();
  }catch(e){if(!current())return;state.loading=false;state.refreshError=e.message;renderPage();}
 }
-function navigate(page){if(state.role==='LEAD'&&!['overview','inbox','lead-workspace'].includes(page)){state.leadTab=page==='hours'?'hours':page==='applications'?'withdrawal':'schedules';page='lead-workspace';}if(state.page!==page){state.inboxSelected=new Set();state.collectionSelections=new Map();}state.page=page;state.tab='';state.search='';state.status='';state.sequence++;document.querySelector('.workspace')?.classList.remove('menu-open');updateNavigation();renderPage();}
+function navigate(page){closeDialog(true);if(state.role==='LEAD'&&!['overview','inbox','lead-workspace'].includes(page)){state.leadTab=page==='hours'?'hours':page==='applications'?'withdrawal':'schedules';page='lead-workspace';}if(state.page!==page){state.inboxSelected=new Set();state.collectionSelections=new Map();}state.page=page;state.tab='';state.search='';state.status='';state.sequence++;document.querySelector('.workspace')?.classList.remove('menu-open');updateNavigation();renderPage();}
 function heading(title,text,button=''){return `<div class="page-heading"><div><h1>${title}</h1><p>${text}</p></div>${button?`<div class="page-actions">${button}</div>`:''}</div>`;}
 function canFuture(r){return r.status==='ACTIVE'&&new Date(`${r.schedule_date}T${r.start_time}:00+08:00`)>new Date();}
 function isEnded(r){if(r.schedule_kind==='WEEKLY'){const day=new Date(`${r.schedule_date}T00:00:00+08:00`);day.setUTCDate(day.getUTCDate()-6);return day<=new Date();}return new Date(`${r.schedule_date}T${r.end_time}:00+08:00`)<=new Date();}
@@ -181,7 +181,7 @@ function openDialog(title,subtitle,fields,onSubmit,button='确认提交'){
  dialog.showModal();
 }
 function setModalBusy(busy){modalBusy=busy;dialog.querySelectorAll('[data-action="close"]').forEach(button=>button.disabled=busy);}
-function closeDialog(force=false){if(modalBusy&&!force)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();modalSubmit=null;previousFocus?.focus?.();}
+function closeDialog(force=false){if(modalBusy&&!force)return;if(!dialog.open&&!modalSubmit)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();modalSubmit=null;const focus=previousFocus;previousFocus=null;focus?.focus?.();}
 function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength}={}){
  const attrs=`id="f-${name}" name="${name}" ${required?'required':''} ${min!==undefined?`min="${min}"`:''} ${max!==undefined?`max="${max}"`:''} ${step!==undefined?`step="${step}"`:''} ${maxLength?`maxlength="${maxLength}"`:''}`;
  const input=options?`<select ${attrs}>${options.map(([v,t])=>`<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(t)}</option>`).join('')}</select>`:type==='textarea'?`<textarea ${attrs} placeholder="${esc(placeholder)}">${esc(value)}</textarea>`:`<input ${attrs} type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${type==='password'?'autocomplete="new-password"':''}>`;
@@ -249,7 +249,7 @@ document.addEventListener('click',async e=>{
  }
  const target=e.target.closest('button,[data-page]');if(!target)return;
  if(target.dataset.page){navigate(target.dataset.page);return;}
- if(target.dataset.tab){state.tab=target.dataset.tab;renderPage();return;}
+ if(target.dataset.tab){closeDialog(true);state.tab=target.dataset.tab;renderPage();return;}
  const name=target.dataset.action;
  if(name==='hours-export'&&state.role==='SUPER'){
   const semesters=state.data.semesters||[];

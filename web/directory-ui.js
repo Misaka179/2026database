@@ -52,7 +52,7 @@ function directoryAction(name,id){
  if(name==='business-slot'){openDialog('添加固定时段','同一业务、同一天内的时段不能重叠。',slotFields(),v=>send(`/businesses/${id}/slots`,slotValues(v)));scrollableDialog();return true;}
  if(name==='group-show'){showGroupMembers(id);return true;}
  if(name==='group-member'){openDialog('调整小组成员','允许兼任其他小组，不追改历史归属。',field('student_id','学号',{maxLength:32})+field('active','操作',{options:[['true','加入'],['false','退出小组']]})+field('effective_date','生效日期',{type:'date',min:getDate(),value:getDate()})+reasonField(),v=>send(`/business-groups/${id}/members/${encodeURIComponent(v.student_id)}`,{active:v.active==='true',effective_date:v.effective_date,reason:v.reason},'PUT'));return true;}
- if(name==='member-import'){openMemberImport();return true;}
+ if(name==='member-import'){if(state.role==='SUPER')openMemberImport();return true;}
  return false;
 }
 function openMemberImport(){
@@ -60,19 +60,21 @@ function openMemberImport(){
  openDialog('导入业务／小组名单','识别各工作表中的姓名、学号、学院。只建立归属，不计服务时长。',
  '<div class="field full"><label for="member-file">名单 Excel</label><input id="member-file" type="file" accept=".xlsx"></div>'+field('initial_password','新账号初始密码',{type:'password',required:false,full:true,minLength:8,maxLength:128})+'<div class="field full"><button type="button" class="btn" id="member-preview">读取 / 重新核对</button><div id="member-import-results"></div></div>',async v=>{
   if(preview?.replayed)return preview;
-  if(!preview||preview.errors.length)throw new Error('请先读取名单，处理异常后重新核对。');
+  if(!preview)await refreshPreview();
+  if(preview.errors.length)throw new Error('仍有待核对记录，请处理后重新核对。');
   return send('/member-imports',{file_base64:encoded,mappings,decisions,initial_password:v.initial_password||null,commit:true});
  },'确认导入');
  dialog.classList.add('collection-dialog');dialog.addEventListener('close',()=>dialog.classList.remove('collection-dialog'),{once:true});
  $('#member-file').onchange=()=>{encoded='';preview=null;mappings={};decisions={};$('#member-import-results').innerHTML='';};
  const targetOptions=()=>[['','跳过此表'],...activeBusinesses().filter(b=>b.kind==='EVENT').flatMap(b=>[[String(b.business_id),b.name+'（未分组）'],...(state.data.groups||[]).filter(g=>g.business_id===b.business_id).map(g=>[`${b.business_id}:${g.group_id}`,b.name+' / '+g.name])])];
- $('#member-preview').onclick=async()=>{
+ async function refreshPreview(){
   const btn=$('#member-preview');btn.disabled=true;
   try{const file=$('#member-file').files[0];if(!file||file.size>8*1024*1024)throw new Error('请选择不超过8MB的 .xlsx 文件。');if(!encoded)encoded=await fileBase64(file);
    preview=await send('/member-imports',{file_base64:encoded,mappings,decisions});
    $('#member-import-results').innerHTML=preview.replayed?'<p class="notice">本批次已导入，不会重复添加。</p>':`<p>可导入 ${preview.eligible} 条，新账号 ${preview.new_students} 个，跳过 ${preview.skipped} 条，待核对 ${preview.errors.length} 条。</p>`+preview.sheets.map(s=>`<label class="import-sheet">${esc(s.name)}（${s.count}行）<select data-sheet-map="${esc(s.name)}">${targetOptions().map(([v,n])=>`<option value="${v}" ${v===(s.target?String(s.target.business_id)+(s.target.group_id?':'+s.target.group_id:''):'')?'selected':''}>${esc(n)}</option>`).join('')}</select></label>`).join('')+table(['来源','姓名 / 原学号','核对','处理'],preview.rows.map(r=>`<tr><td>${esc(r.sheet)} 第${r.row}行</td><td>${esc(r.name)}<small>${esc(r.student_id||'缺学号')}</small></td><td class="wrap">${esc(r.error|| (r.skipped?'已跳过':'有效'))}${r.candidates?.length?'<small>同名账号：'+r.candidates.map(p=>esc(p.student_id)).join('、')+'</small>':''}</td><td><label><input type="checkbox" data-row-skip="${esc(r.key)}" ${decisions[r.key]?.skip?'checked':''}>跳过</label><input aria-label="${esc(r.key)}核对后学号" data-row-id="${esc(r.key)}" value="${esc(decisions[r.key]?.student_id||'')}" placeholder="核对后填写学号"><label><input type="checkbox" data-row-confirm="${esc(r.key)}" ${decisions[r.key]?.confirmed?'checked':''}>已核实身份</label></td></tr>`));
-  }catch(e){notify(e.message,true);}finally{btn.disabled=false;}
- };
+  }catch(e){notify(e.message,true);throw e;}finally{btn.disabled=false;}
+ }
+ $('#member-preview').onclick=()=>refreshPreview().catch(()=>{});
  $('#member-import-results').onchange=e=>{const x=e.target;
   if(x.dataset.sheetMap!==undefined){const [b,g]=x.value.split(':');mappings[x.dataset.sheetMap]=b?{business_id:Number(b),group_id:g?Number(g):null}:null;}
   for(const [key,field] of [['rowSkip','skip'],['rowId','student_id'],['rowConfirm','confirmed']])if(x.dataset[key]!==undefined){const k=x.dataset[key];decisions[k]??={};decisions[k][field]=field==='student_id'?x.value.trim():x.checked;}
