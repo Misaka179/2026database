@@ -1,4 +1,4 @@
-/* 找回 / 修改密码页：主题、hash 路由与表单提交（v2.5） */
+/* 找回密码页：主题切换与重置申请提交（v2.5） */
 (function () {
   'use strict';
 
@@ -64,45 +64,13 @@
   }
   applyTheme();
 
-  /* 标签页与 hash 路由：#reset 忘记密码 / #change 修改密码 */
-  var tabs = document.querySelectorAll('[data-auth-tab]');
-  function syncTabs() {
-    var route = window.location.hash === '#change' ? 'change' : 'reset';
-    for (var i = 0; i < tabs.length; i++) {
-      var tab = tabs[i];
-      var selected = tab.getAttribute('data-auth-tab') === route;
-      tab.setAttribute('aria-selected', String(selected));
-      var panel = document.getElementById(tab.getAttribute('aria-controls'));
-      if (panel) panel.hidden = !selected;
-    }
-    if (route === 'change') {
-      var token = null;
-      try {
-        token = sessionStorage.getItem('volunteer_token');
-      } catch (error) {
-        token = null;
-      }
-      if (!token) {
-        showFeedback('change-feedback', '请先返回登录页登录，登录后再修改密码。', 'warning');
-      }
-    }
-  }
-
-  for (var i = 0; i < tabs.length; i++) {
-    tabs[i].addEventListener('click', function () {
-      var target = this.getAttribute('data-target');
-      if (target) window.location.hash = target;
-      syncTabs();
-    });
-  }
-  window.addEventListener('hashchange', syncTabs);
-  syncTabs();
-
   function showFeedback(id, message, type) {
     var box = document.getElementById(id);
     if (!box) return;
     box.hidden = false;
-    box.className = 'notice' + (type === 'error' ? ' error' : type === 'success' ? ' success' : type === 'warning' ? ' warning' : '');
+    box.className = 'notice' + (type === 'error' ? ' error'
+      : type === 'success' ? ' success'
+      : type === 'warning' ? ' warning' : '');
     box.textContent = message;
   }
 
@@ -124,12 +92,14 @@
     return fallback;
   }
 
-  async function postJson(path, body, token) {
-    var headers = { 'Content-Type': 'application/json' };
-    if (token) headers.Authorization = 'Bearer ' + token;
+  async function postJson(path, body) {
     var response;
     try {
-      response = await fetch(path, { method: 'POST', headers: headers, body: JSON.stringify(body) });
+      response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
     } catch (error) {
       throw new Error('连接暂时中断，请检查本机服务后重试。');
     }
@@ -142,63 +112,12 @@
     return data;
   }
 
-  async function getJson(path, token) {
-    var response;
-    try {
-      response = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
-    } catch (error) {
-      throw new Error('连接暂时中断，请检查本机服务后重试。');
-    }
-    var data = await response.json().catch(function () {
-      return {};
-    });
-    if (!response.ok) {
-      throw new Error(detailMessage(data, '登录状态已失效，请重新登录。'));
-    }
-    return data;
-  }
-
-  function identityOf(me) {
-    if (me && me.account) return { kind: 'admin', label: '管理员', account: me.account };
-    if (me && me.student_id) return { kind: 'student', label: '志愿者', account: me.student_id };
-    return { kind: 'admin', label: '管理员', account: '' };
-  }
-
-  var passwordDialog = document.getElementById('password-dialog');
-  function showChangeDone(identity) {
-    if (!passwordDialog || !passwordDialog.showModal) return false;
-    var kindText = document.getElementById('password-dialog-kind');
-    var accountText = document.getElementById('password-dialog-account');
-    if (kindText) kindText.textContent = identity.label;
-    if (accountText) accountText.textContent = identity.account || '—';
-    passwordDialog.showModal();
-    var login = document.getElementById('password-dialog-login');
-    if (login && login.focus) login.focus();
-    return true;
-  }
-
-  function submitOnce(form, handler) {
-    form.addEventListener('submit', async function (event) {
-      event.preventDefault();
-      var button = form.querySelector('[type="submit"]');
-      if (button.disabled) return;
-      var original = button.innerHTML;
-      button.disabled = true;
-      try {
-        await handler(button);
-      } catch (error) {
-        showFeedback(form.id === 'change-form' ? 'change-feedback' : 'reset-feedback',
-          (error && error.message) || '操作未完成，请稍后重试。', 'error');
-      } finally {
-        button.disabled = false;
-        button.innerHTML = original;
-      }
-    });
-  }
-
   var resetForm = document.getElementById('reset-form');
   if (resetForm) {
-    submitOnce(resetForm, async function () {
+    resetForm.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      var button = resetForm.querySelector('[type="submit"]');
+      if (button.disabled) return;
       hideFeedback('reset-feedback');
       var data = new FormData(resetForm);
       var body = {
@@ -212,64 +131,17 @@
         showFeedback('reset-feedback', '请填写学号/管理员账号与姓名，便于管理员核实身份。', 'error');
         return;
       }
-      await postJson('/auth/password/reset-request', body);
-      resetForm.reset();
-      showFeedback('reset-feedback', '重置申请已提交。管理员核实身份后会为你重置密码，并通过站内通知告知。', 'success');
-    });
-  }
-
-  var changeForm = document.getElementById('change-form');
-  if (changeForm) {
-    submitOnce(changeForm, async function () {
-      hideFeedback('change-feedback');
-      var token = null;
+      var original = button.innerHTML;
+      button.disabled = true;
       try {
-        token = sessionStorage.getItem('volunteer_token');
+        await postJson('/auth/password/reset-request', body);
+        resetForm.reset();
+        showFeedback('reset-feedback', '重置申请已提交。管理员核实身份后会为你重置密码，并通过站内通知告知。', 'success');
       } catch (error) {
-        token = null;
-      }
-      if (!token) {
-        showFeedback('change-feedback', '请先返回登录页登录，登录后再修改密码。', 'warning');
-        return;
-      }
-      var me = null;
-      try {
-        me = await getJson('/auth/me', token);
-      } catch (error) {
-        showFeedback('change-feedback', '登录状态已失效，请返回登录页重新登录后再修改密码。', 'warning');
-        return;
-      }
-      var identity = identityOf(me);
-      var data = new FormData(changeForm);
-      var body = {
-        current_password: String(data.get('current_password') || ''),
-        new_password: String(data.get('new_password') || '')
-      };
-      if (String(data.get('confirm_password') || '') !== body.new_password) {
-        showFeedback('change-feedback', '两次输入的新密码不一致。', 'error');
-        return;
-      }
-      if (body.new_password.length < 8 || body.new_password.length > 128) {
-        showFeedback('change-feedback', '新密码长度必须为 8 至 128 个字符。', 'error');
-        return;
-      }
-      // postJson 失败会由 submitOnce 兜底显示中文错误（如“当前密码不正确”）。
-      await postJson('/auth/password/change', body, token);
-      changeForm.reset();
-      try {
-        sessionStorage.removeItem('volunteer_token');
-        // 登录页据此自动带出身份与账号，并提示使用新密码。
-        sessionStorage.setItem('password_changed', JSON.stringify({
-          kind: identity.kind,
-          account: identity.account
-        }));
-      } catch (error) {
-        /* 隐私模式下忽略存储失败 */
-      }
-      hideFeedback('change-feedback');
-      if (!showChangeDone(identity)) {
-        showFeedback('change-feedback', '密码已更新，请使用新密码重新登录。', 'success');
-        window.location.href = '/';
+        showFeedback('reset-feedback', (error && error.message) || '提交失败，请稍后重试。', 'error');
+      } finally {
+        button.disabled = false;
+        button.innerHTML = original;
       }
     });
   }

@@ -246,7 +246,7 @@ def run_step(label: str, arguments: list[str]) -> None:
 def report_running(port: int) -> None:
     print(f'本系统已经运行，无需重复启动。请直接打开：{home_url(port)}', flush=True)
     print(f'中文接口文档：{home_url(port)}docs', flush=True)
-    print(f'找回或修改密码：{home_url(port)}password', flush=True)
+    print(f'找回密码（忘记密码）：{home_url(port)}password', flush=True)
 
 
 def wait_for_close() -> None:
@@ -300,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         print(f'中文工作台：{home_url(api_port)}', flush=True)
         print(f'中文接口文档：{home_url(api_port)}docs', flush=True)
-        print(f'找回或修改密码：{home_url(api_port)}password', flush=True)
+        print(f'找回密码（忘记密码）：{home_url(api_port)}password', flush=True)
         print('请保持此窗口打开；使用结束后按 Ctrl+C 停止网页服务。', flush=True)
         run_step('【3/3】启动网页服务。',
                  ['-m', 'uvicorn', 'app.api:app', '--host', HOST, '--port', str(api_port)])

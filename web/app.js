@@ -31,7 +31,8 @@ function slotName(id) { const s=rowsOf(state.data.slots,'slot_id',id); return s?
 function adminName(id) {if(id===null||id===undefined)return '待分配';const a=rowsOf(state.data.admins,'admin_id',id);return a?a.name:`管理员 ${id}`;}
 function table(headers, rows, blank='暂无记录', text='记录生成后会显示在这里。') {return rows.length?`<div class="table-wrap"><table><thead><tr>${headers.map(x=>`<th scope="col">${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:empty(blank,text);}
 function tabs(items,current){return `<div class="tabs" role="tablist" aria-label="内容分类">${items.map(([v,t])=>`<button class="tab ${current===v?'active':''}" role="tab" aria-selected="${current===v}" data-tab="${v}">${t}</button>`).join('')}</div>`;}
-function notify(text,error=false){const n=document.createElement('div');n.className='toast'+(error?' error':'');n.textContent=text;$('#notifications').append(n);setTimeout(()=>n.remove(),5000);}
+function successBar(text){const previous=document.querySelector('.success-bar');if(previous)previous.remove();const bar=document.createElement('div');bar.className='success-bar';bar.setAttribute('role','status');bar.innerHTML=`${uiIcon('check-circle')}<span>${esc(text)}</span>`;document.body.append(bar);setTimeout(()=>bar.remove(),4500);}
+function notify(text,error=false){if(!error&&typeof text==='string'&&text.indexOf('密码已更新')===0){successBar(text);return;}const n=document.createElement('div');n.className='toast'+(error?' error':'');n.textContent=text;$('#notifications').append(n);setTimeout(()=>n.remove(),5000);}
 function setTheme(theme){if(theme)document.documentElement.dataset.theme=theme;else delete document.documentElement.dataset.theme;}
 async function request(path,options={}) {
   const token=state.token;const sessionVersion=state.sessionVersion;
@@ -195,10 +196,24 @@ function field(name,title,{type='text',value='',options,required=true,full=false
  return `<div class="field ${full?'full':''}"><label for="f-${name}">${esc(title)}${!required?'<span class="required-label">选填</span>':''}</label>${input}${help?`<small>${esc(help)}</small>`:''}</div>`;
 }
 const reasonField=()=>field('reason','原因说明',{type:'textarea',full:true,maxLength:500,placeholder:'请填写具体原因，便于审批和后续核对'});
+function changePasswordDialog(){
+ return openDialog('修改密码','验证当前密码后设置新密码；修改成功后请牢记新密码。',
+  field('current_password','当前密码',{type:'password',full:true,maxLength:128,placeholder:'请输入当前密码'})+
+  field('new_password','新密码',{type:'password',full:true,maxLength:128,placeholder:'8 至 128 个字符'})+
+  field('confirm_password','确认新密码',{type:'password',full:true,maxLength:128,placeholder:'请再次输入新密码'}),
+  async v=>{
+   if(v.new_password!==v.confirm_password)throw new Error('两次输入的新密码不一致。');
+   if(v.new_password===v.current_password)throw new Error('密码与原密码一致，请设置不同的新密码');
+   if(!v.new_password||v.new_password.length<8||v.new_password.length>128)throw new Error('新密码长度必须为 8 至 128 个字符。');
+   await send('/auth/password/change',{current_password:v.current_password,new_password:v.new_password});
+   return {changed:true};
+  }, '保存新密码');
+}
 function scheduleOptions(){return state.data.schedules.filter(canFuture).map(r=>[r.schedule_id,`${r.schedule_date} ${slotName(r.slot_id)}`]);}
 function action(name,id,kind){
  if(name==='menu-close'){document.querySelector('.workspace')?.classList.remove('menu-open');return;}
  if(modalBusy)return;
+ if(name==='change-password')return changePasswordDialog();
  if(leaderAction(name,id)||directoryAction(name,id)||governanceAction(name,id,kind)||businessAction(name,id,kind)||semesterAction(name,id)||rosterAction(name,id))return;
  const r=rowsOf(state.data.schedules,'schedule_id',id);
  if(name==='leave'){
@@ -304,7 +319,7 @@ document.addEventListener('submit',async e=>{
    setModalBusy(true);const result=await callback(values);
    if(session!==state.sessionVersion)return;
    if(version===modalVersion){setModalBusy(false);closeDialog();}
-   notify(result?.downloaded?'导出文件已下载。':result?.published?'时长征集已发布。':'操作已完成，记录已更新。');if(!result?.downloaded)await refresh();
+   notify(result?.changed?'密码已更新，请牢记新密码。':result?.downloaded?'导出文件已下载。':result?.published?'时长征集已发布。':'操作已完成，记录已更新。');if(!result?.downloaded)await refresh();
   }
  }catch(ex){if(form.id==='action-form'&&(session!==state.sessionVersion||version!==modalVersion))return;if(errorEl.isConnected){errorEl.textContent=ex.message;errorEl.hidden=false;}else notify(ex.message,true);}
  finally{if(form.id==='action-form'&&version===modalVersion)setModalBusy(false);submit.disabled=false;submit.textContent=oldText;}
@@ -391,19 +406,6 @@ function loginView() {
   document.title = '登录 · 图书馆志愿服务';
   state.me = null;
   state.role = null;
-  // 从改密页返回时：自动带出身份与账号，并提示使用新密码（避免浏览器填充旧密码）。
-  let hint = null;
-  try {
-    hint = JSON.parse(sessionStorage.getItem('password_changed') || 'null');
-    if (hint) sessionStorage.removeItem('password_changed');
-  } catch (error) {
-    hint = null;
-  }
-  const hintKind = hint && hint.kind === 'student' ? 'student' : 'admin';
-  const hintAccount = hint && hint.account ? esc(String(hint.account)) : '';
-  const hintNotice = hint
-    ? `<div class="notice success" role="status">${uiIcon('check-circle')}密码已更新，请使用新密码登录${hintAccount ? `（${hintKind === 'student' ? '志愿者' : '管理员'} · ${hintAccount}）` : ''}。</div>`
-    : '';
   app.innerHTML = `<main class="auth-page" id="main">
     <section class="auth-hero" aria-label="系统简介">
       <p class="auth-hero-top">图书馆志愿服务管理系统</p>
@@ -453,15 +455,14 @@ function loginView() {
         </div>
         <h2>欢迎回来</h2>
         <p class="auth-sub">使用你的账号登录工作台。</p>
-        ${hintNotice}
         <form class="auth-form" id="login-form" novalidate>
           <div class="auth-field">
             <label for="login-kind">登录身份</label>
             <div class="auth-control">
               ${uiIcon('users', 'lead')}
               <select id="login-kind" name="kind">
-                <option value="admin"${hintKind === 'admin' ? ' selected' : ''}>管理员</option>
-                <option value="student"${hintKind === 'student' ? ' selected' : ''}>志愿者</option>
+                <option value="admin">管理员</option>
+                <option value="student">志愿者</option>
               </select>
               <span class="trail">${uiIcon('chevron-down')}</span>
             </div>
@@ -471,7 +472,6 @@ function loginView() {
             <div class="auth-control">
               ${uiIcon('user', 'lead')}
               <input id="login-account" name="account" type="text" autocomplete="username"
-                     value="${hintAccount}"
                      placeholder="请输入管理员账号或学号" required maxlength="64">
               <span class="trail">${uiIcon('help')}</span>
             </div>
@@ -484,7 +484,7 @@ function loginView() {
             <div class="auth-control">
               ${uiIcon('lock', 'lead')}
               <input id="login-password" name="password" type="password"
-                     ${hint ? 'autocomplete="new-password"' : 'autocomplete="current-password"'}
+                     autocomplete="current-password"
                      placeholder="请输入密码" required maxlength="128">
               <span class="trail">
                 <button class="auth-reveal" type="button" data-reveal="login-password" aria-label="显示密码">
@@ -503,8 +503,6 @@ function loginView() {
         <div class="auth-divider" style="margin-top:22px">其他操作</div>
         <p class="auth-help" style="text-align:center;margin-top:12px">
           <a class="auth-link" href="/password#reset">找回密码</a>
-          <span class="muted"> · </span>
-          <a class="auth-link" href="/password#change">修改密码</a>
         </p>
         <p class="auth-help" style="margin-top:14px">不同角色登录后会看到对应的工作范围；首次使用请向项目管理员获取账号和密码。</p>
         <div class="auth-foot">
@@ -514,10 +512,6 @@ function loginView() {
       </div>
     </section>
   </main>`;
-  if (hint) {
-    const passwordInput = $('#login-password');
-    if (passwordInput && passwordInput.focus) passwordInput.focus();
-  }
 }
 
 function buildShell() {
@@ -532,7 +526,7 @@ function buildShell() {
       <div class="nav-label">日常工作</div>
       <nav class="nav-list">${navigationHtml(available)}</nav>
       <div class="sidebar-bottom">
-        <a href="/password#change">${uiIcon('key')}修改密码</a>
+        <button class="side-action" type="button" data-action="change-password">${uiIcon('key')}修改密码</button>
         <a href="/docs">${uiIcon('external')}中文接口说明</a>
         <div class="profile">
           <span class="avatar" aria-hidden="true">${esc(state.me.name.slice(0, 1))}</span>
