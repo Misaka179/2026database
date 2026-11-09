@@ -419,6 +419,7 @@ h3 {
 .icon-button svg {
   width: 16px;
   height: 16px;
+  display: block;
 }
 
 .main-content {

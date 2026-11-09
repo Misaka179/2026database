@@ -439,9 +439,8 @@ function loginView() {
       </div>
     </section>
     <section class="auth-panel">
-      <button class="theme-button auth-theme" type="button" data-action="theme" aria-label="切换外观">
+      <button class="icon-button auth-theme" type="button" data-action="theme" title="切换主题">
         <span data-theme-icon>${uiIcon('moon')}</span>
-        <span data-theme-label>${themeText()}</span>
       </button>
       <div class="auth-card">
         <div class="auth-mobile-brand">
@@ -508,9 +507,6 @@ function buildShell() {
       <button class="sidebar-collapse-btn" type="button" data-action="sidebar-toggle" aria-label="折叠或展开导航">${uiIcon('chevron-right')}</button>
       <div class="nav-label">日常工作</div>
       <nav class="nav-list">${navigationHtml(available)}</nav>
-      <div class="sidebar-bottom">
-        <button class="text-button" style="text-align:left" data-action="logout">退出登录</button>
-      </div>
     </aside>
     <button class="sidebar-backdrop" type="button" data-action="menu-close" aria-label="关闭导航菜单"></button>
     <div class="workspace-body">
@@ -523,7 +519,7 @@ function buildShell() {
           <button class="icon-button" data-action="theme" title="切换主题"><span data-theme-icon>${uiIcon('moon')}</span></button>
           <div class="profile">
             <span class="avatar" aria-hidden="true">${esc(state.me.name.slice(0, 1))}</span>
-            <span><strong>${esc(state.me.name)}</strong></span>
+            <span><strong>${esc(state.me.account||state.me.student_id||state.me.name)}</strong></span>
           </div>
           <button class="icon-button" data-action="change-password" title="修改密码">${uiIcon('key')}</button>
           <button class="icon-button" data-action="logout" title="退出登录">${uiIcon('logout')}</button>
