@@ -20,7 +20,7 @@ const nav = [
   ['semesters','学期与日历',['SUPER','NORMAL','STUDENT']],['applications','申请与审批',['SUPER','NORMAL','STUDENT']],['hours','服务时长',['SUPER','STUDENT']],
   ['credit','信用管理',['SUPER','STUDENT']],['basics','基础资料',['SUPER']],['slots','服务班次',['NORMAL']],['logs','操作日志',['SUPER']],['members','本时段队员',['NORMAL']]
 ];
-const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">${uiIcon('inbox')}</div><h3>${esc(title)}</h3></div>`;
+const empty = (title, text) => `<div class="empty"><div class="empty-symbol" aria-hidden="true">${uiIcon('inbox')}</div><h3>${esc(title)}</h3><p>${esc(text)}</p></div>`;
 const badge = (value, override) => `<span class="badge ${['ACTIVE','APPROVED','NORMAL','VALID'].includes(value)?'good':['REJECTED','DISABLED','ABSENT','LATE'].includes(value)?'warning':['PENDING','FIRST_APPROVED'].includes(value)?'pending':''}">${esc(override || label[value] || value || '未登记')}</span>`;
 const fmtDate = value => value ? String(value).replace('T',' ').slice(0,16) : '未记录';
 const hourText = value => `${Number((Number(value || 0)/60).toFixed(2))} 小时`;
@@ -31,7 +31,8 @@ function slotName(id) { const s=rowsOf(state.data.slots,'slot_id',id); return s?
 function adminName(id) {if(id===null||id===undefined)return '待分配';const a=rowsOf(state.data.admins,'admin_id',id);return a?a.name:`管理员 ${id}`;}
 function table(headers, rows, blank='暂无记录', text='记录生成后会显示在这里。') {return rows.length?`<div class="table-wrap"><table><thead><tr>${headers.map(x=>`<th scope="col">${esc(x)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table></div>`:empty(blank,text);}
 function tabs(items,current){return `<div class="tabs" role="tablist" aria-label="内容分类">${items.map(([v,t])=>`<button class="tab ${current===v?'active':''}" role="tab" aria-selected="${current===v}" data-tab="${v}">${t}</button>`).join('')}</div>`;}
-function notify(text,error=false){const n=document.createElement('div');n.className='toast'+(error?' error':'');n.textContent=text;$('#notifications').append(n);setTimeout(()=>n.remove(),5000);}
+function successBar(text){const previous=document.querySelector('.success-bar');if(previous)previous.remove();const bar=document.createElement('div');bar.className='success-bar';bar.setAttribute('role','status');bar.innerHTML=`${uiIcon('check-circle')}<span>${esc(text)}</span>`;document.body.append(bar);setTimeout(()=>bar.remove(),4500);}
+function notify(text,error=false){if(!error&&typeof text==='string'&&text.indexOf('密码已更新')===0){successBar(text);return;}const n=document.createElement('div');n.className='toast'+(error?' error':'');n.textContent=text;$('#notifications').append(n);setTimeout(()=>n.remove(),5000);}
 function setTheme(theme){if(theme)document.documentElement.dataset.theme=theme;else delete document.documentElement.dataset.theme;}
 async function request(path,options={}) {
   const token=state.token;const sessionVersion=state.sessionVersion;
@@ -65,7 +66,6 @@ async function loadData(role=state.role){
  if(role==='STUDENT')data.slots=[...new Map([...(data.memberships||[]),...(data.schedules||[]),...(data.hours?.records||[])].map(s=>[s.slot_id,s])).values()];
  return data;
 }
-
 async function refresh(){
  if(!state.me||!$('#main'))return;
  // Loading the shared data must survive navigation; page-specific queries use sequence.
@@ -181,18 +181,39 @@ function openDialog(title,subtitle,fields,onSubmit,button='确认提交'){
  dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(title)}</h2><p>${esc(subtitle)}</p></div><button class="close-button" data-action="close">关闭</button></header><div class="dialog-body"><form id="action-form" novalidate><div class="form-grid">${fields}</div><div id="action-error" class="notice error" role="alert" hidden></div><footer class="dialog-footer"><button type="button" class="btn" data-action="close">取消</button><button class="btn primary" type="submit">${esc(button)}</button></footer></form></div>`;
  dialog.showModal();
 }
+function openReadOnlyDialog(title,content){
+ if(modalBusy||dialog.open)return;
+ previousFocus=document.activeElement;modalSubmit=null;modalVersion++;
+ dialog.classList.remove('collection-dialog');
+ dialog.innerHTML=`<header class="dialog-header"><h2 id="dialog-title">${esc(title)}</h2><button class="close-button" type="button" data-action="close">关闭</button></header><div class="dialog-body">${content}</div>`;
+ dialog.showModal();
+}
 function setModalBusy(busy){modalBusy=busy;dialog.querySelectorAll('[data-action="close"]').forEach(button=>button.disabled=busy);}
-function closeDialog(force=false){if(modalBusy&&!force)return;if(!dialog.open&&!modalSubmit)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();modalSubmit=null;const focus=previousFocus;previousFocus=null;focus?.focus?.();}
+function closeDialog(force=false){if(modalBusy&&!force)return;if(!dialog.open&&!modalSubmit)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();dialog.classList.remove('collection-dialog');dialog.innerHTML='';modalSubmit=null;const focus=previousFocus;previousFocus=null;focus?.focus?.();}
 function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength}={}){
  const attrs=`id="f-${name}" name="${name}" ${required?'required':''} ${min!==undefined?`min="${min}"`:''} ${max!==undefined?`max="${max}"`:''} ${step!==undefined?`step="${step}"`:''} ${maxLength?`maxlength="${maxLength}"`:''}`;
  const input=options?`<select ${attrs}>${options.map(([v,t])=>`<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(t)}</option>`).join('')}</select>`:type==='textarea'?`<textarea ${attrs} placeholder="${esc(placeholder)}">${esc(value)}</textarea>`:`<input ${attrs} type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${type==='password'?'autocomplete="new-password"':''}>`;
  return `<div class="field ${full?'full':''}"><label for="f-${name}">${esc(title)}${!required?'<span class="required-label">选填</span>':''}</label>${input}${help?`<small>${esc(help)}</small>`:''}</div>`;
 }
 const reasonField=()=>field('reason','原因说明',{type:'textarea',full:true,maxLength:500,placeholder:'请填写具体原因，便于审批和后续核对'});
+function changePasswordDialog(){
+ return openDialog('修改密码','验证当前密码后设置新密码；修改成功后请牢记新密码。',
+  field('current_password','当前密码',{type:'password',full:true,maxLength:128,placeholder:'请输入当前密码'})+
+  field('new_password','新密码',{type:'password',full:true,maxLength:128,placeholder:'8 至 128 个字符'})+
+  field('confirm_password','确认新密码',{type:'password',full:true,maxLength:128,placeholder:'请再次输入新密码'}),
+  async v=>{
+   if(v.new_password!==v.confirm_password)throw new Error('两次输入的新密码不一致。');
+   if(v.new_password===v.current_password)throw new Error('密码与原密码一致，请设置不同的新密码');
+   if(!v.new_password||v.new_password.length<8||v.new_password.length>128)throw new Error('新密码长度必须为 8 至 128 个字符。');
+   await send('/auth/password/change',{current_password:v.current_password,new_password:v.new_password});
+   return {changed:true};
+  }, '保存新密码');
+}
 function scheduleOptions(){return state.data.schedules.filter(canFuture).map(r=>[r.schedule_id,`${r.schedule_date} ${slotName(r.slot_id)}`]);}
 function action(name,id,kind){
  if(name==='menu-close'){document.querySelector('.workspace')?.classList.remove('menu-open');return;}
  if(modalBusy)return;
+ if(name==='change-password')return changePasswordDialog();
  if(leaderAction(name,id)||directoryAction(name,id)||governanceAction(name,id,kind)||businessAction(name,id,kind)||semesterAction(name,id)||rosterAction(name,id))return;
  const r=rowsOf(state.data.schedules,'schedule_id',id);
  if(name==='leave'){
@@ -298,7 +319,7 @@ document.addEventListener('submit',async e=>{
    setModalBusy(true);const result=await callback(values);
    if(session!==state.sessionVersion)return;
    if(version===modalVersion){setModalBusy(false);closeDialog();}
-   notify(result?.downloaded?'导出文件已下载。':result?.published?'时长征集已发布。':'操作已完成，记录已更新。');if(!result?.downloaded)await refresh();
+   notify(result?.changed?'密码已更新，请牢记新密码。':result?.downloaded?'导出文件已下载。':result?.published?'时长征集已发布。':'操作已完成，记录已更新。');if(!result?.downloaded)await refresh();
   }
  }catch(ex){if(form.id==='action-form'&&(session!==state.sessionVersion||version!==modalVersion))return;if(errorEl.isConnected){errorEl.textContent=ex.message;errorEl.hidden=false;}else notify(ex.message,true);}
  finally{if(form.id==='action-form'&&version===modalVersion)setModalBusy(false);submit.disabled=false;submit.textContent=oldText;}
@@ -385,48 +406,42 @@ function loginView() {
   document.title = '登录 · 图书馆志愿服务';
   state.me = null;
   state.role = null;
-  // 从改密页返回时：自动带出身份与账号，并提示使用新密码（避免浏览器填充旧密码）。
-  let hint = null;
-  try {
-    hint = JSON.parse(sessionStorage.getItem('password_changed') || 'null');
-    if (hint) sessionStorage.removeItem('password_changed');
-  } catch (error) {
-    hint = null;
-  }
-  const hintKind = hint && hint.kind === 'student' ? 'student' : 'admin';
-  const hintAccount = hint && hint.account ? esc(String(hint.account)) : '';
-  const hintNotice = hint
-    ? `<div class="notice success" role="status">${uiIcon('check-circle')}密码已更新，请使用新密码登录${hintAccount ? `（${hintKind === 'student' ? '志愿者' : '管理员'} · ${hintAccount}）` : ''}。</div>`
-    : '';
   app.innerHTML = `<main class="auth-page" id="main">
     <section class="auth-hero" aria-label="系统简介">
-      <p class="auth-hero-top">四川大学图书馆志愿服务队管理系统</p>
+      <p class="auth-hero-top">图书馆志愿服务管理系统</p>
       <div class="auth-hero-main">
         <div class="auth-brand">
           <span class="auth-brand-tile">${uiIcon('book')}</span>
           <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
         </div>
         <span class="auth-chip">志愿服务 · 一站式管理</span>
-        <h1 class="auth-headline">把每一次志愿服务，安排妥当。</h1>
+        <h1 class="auth-headline">把每一次志愿服务，<br>安排妥当。</h1>
+        <p class="auth-lead">从排班与考勤，到请假审批、服务时长与信用记录，在同一处完成日常管理，每一步都可追溯。</p>
         <div class="auth-features">
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('calendar')}</span>
-            <span><strong>排班与考勤</strong></span>
+            <span><strong>排班与考勤</strong><small>按学期日历自动生成，结束后登记出勤。</small></span>
           </div>
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('check')}</span>
-            <span><strong>申请与审批</strong></span>
+            <span><strong>申请与审批</strong><small>请假、长期换班和退队，进度清晰可查。</small></span>
           </div>
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('clock')}</span>
-            <span><strong>时长与信用</strong></span>
+            <span><strong>时长与信用</strong><small>逐笔记录，保留每次变更的依据。</small></span>
           </div>
           <div class="auth-feature">
             <span class="auth-feature-icon">${uiIcon('users')}</span>
-            <span><strong>管理与分队</strong></span>
+            <span><strong>分队与负责人</strong><small>按业务与小组分工，权限范围明确。</small></span>
           </div>
         </div>
+        <div class="auth-stats" aria-label="系统概况">
+          <div class="auth-stat"><strong>335</strong><small>在册志愿者</small></div>
+          <div class="auth-stat"><strong>7,035</strong><small>累计服务小时</small></div>
+          <div class="auth-stat"><strong>35</strong><small>固定服务时段</small></div>
+        </div>
       </div>
+      <p class="auth-quote">${uiIcon('book')}以书为伴，以服务为荣 —— 四川大学图书馆志愿服务队</p>
     </section>
     <section class="auth-panel">
       <button class="theme-button auth-theme" type="button" data-action="theme" aria-label="切换外观">
@@ -439,15 +454,15 @@ function loginView() {
           <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
         </div>
         <h2>欢迎回来</h2>
-        ${hintNotice}
+        <p class="auth-sub">使用你的账号登录工作台。</p>
         <form class="auth-form" id="login-form" novalidate>
           <div class="auth-field">
             <label for="login-kind">登录身份</label>
             <div class="auth-control">
               ${uiIcon('users', 'lead')}
               <select id="login-kind" name="kind">
-                <option value="admin"${hintKind === 'admin' ? ' selected' : ''}>管理员</option>
-                <option value="student"${hintKind === 'student' ? ' selected' : ''}>志愿者</option>
+                <option value="admin">管理员</option>
+                <option value="student">志愿者</option>
               </select>
               <span class="trail">${uiIcon('chevron-down')}</span>
             </div>
@@ -457,8 +472,8 @@ function loginView() {
             <div class="auth-control">
               ${uiIcon('user', 'lead')}
               <input id="login-account" name="account" type="text" autocomplete="username"
-                     value="${hintAccount}"
                      placeholder="请输入管理员账号或学号" required maxlength="64">
+              <span class="trail">${uiIcon('help')}</span>
             </div>
           </div>
           <div class="auth-field">
@@ -469,7 +484,7 @@ function loginView() {
             <div class="auth-control">
               ${uiIcon('lock', 'lead')}
               <input id="login-password" name="password" type="password"
-                     ${hint ? 'autocomplete="new-password"' : 'autocomplete="current-password"'}
+                     autocomplete="current-password"
                      placeholder="请输入密码" required maxlength="128">
               <span class="trail">
                 <button class="auth-reveal" type="button" data-reveal="login-password" aria-label="显示密码">
@@ -478,19 +493,25 @@ function loginView() {
               </span>
             </div>
           </div>
+          <div class="auth-row">
+            <span class="auth-help">登录有效期 1 小时</span>
+            <a class="auth-link" href="/password#reset">无法登录？联系队伍组</a>
+          </div>
           <div id="login-error" class="notice error" role="alert" hidden></div>
           <button class="auth-submit" type="submit">登录工作台 ${uiIcon('arrow-right')}</button>
         </form>
-        <p class="auth-help" style="text-align:center;margin-top:18px">
+        <div class="auth-divider" style="margin-top:22px">其他操作</div>
+        <p class="auth-help" style="text-align:center;margin-top:12px">
           <a class="auth-link" href="/password#reset">找回密码</a>
         </p>
+        <p class="auth-help" style="margin-top:14px">不同角色登录后会看到对应的工作范围；首次使用请向项目管理员获取账号和密码。</p>
+        <div class="auth-foot">
+          <span>四川大学图书馆志愿服务队</span>
+          <span class="auth-foot-right">© 2026 四川大学图书馆 · 仅限校内授权使用</span>
+        </div>
       </div>
     </section>
   </main>`;
-  if (hint) {
-    const passwordInput = $('#login-password');
-    if (passwordInput && passwordInput.focus) passwordInput.focus();
-  }
 }
 
 function buildShell() {
@@ -505,7 +526,7 @@ function buildShell() {
       <div class="nav-label">日常工作</div>
       <nav class="nav-list">${navigationHtml(available)}</nav>
       <div class="sidebar-bottom">
-        <a href="/password#change">${uiIcon('key')}修改密码</a>
+        <button class="side-action" type="button" data-action="change-password">${uiIcon('key')}修改密码</button>
         <a href="/docs">${uiIcon('external')}中文接口说明</a>
         <div class="profile">
           <span class="avatar" aria-hidden="true">${esc(state.me.name.slice(0, 1))}</span>

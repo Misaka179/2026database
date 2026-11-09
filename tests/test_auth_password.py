@@ -84,6 +84,17 @@ class AuthPasswordTests(unittest.TestCase):
         with self.service.db.transaction() as c:
             return list(all_rows(c, sql, args))
 
+    def test_change_password_rejects_same_as_current(self):
+        headers = self.headers("student", "20260001")
+        response = self.client.post(
+            CHANGE,
+            json={"current_password": OLD_PASSWORD, "new_password": OLD_PASSWORD},
+            headers=headers,
+        )
+        body = self.check(response, 400)
+        self.assertIn("密码与原密码一致", body["detail"])
+        self.check(self.login("student", "20260001"), 200)
+
     def test_change_password_requires_login_and_validates(self):
         valid = {"current_password": OLD_PASSWORD, "new_password": "New-Student-2026!"}
         self.check(self.client.post(CHANGE, json=valid), 401)
