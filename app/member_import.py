@@ -60,6 +60,18 @@ class MemberImport:
                 row = next((r for r in rows if r['key'] == key), None)
                 if row and row['student_id']:
                     approvals[row['student_id']] = True
+        all_people = merge_people(rows)
+        prehashed = {}
+        if commit:
+            # 与固定业务导入一致：先只读校验账号角色并确认要建号的人，锁外完成慢哈希
+            with self.db.transaction() as c0:
+                self.actor(c0, actor, ('SUPER', 'NORMAL'))
+                missing = [p['student_id'] for p in all_people
+                           if not one(c0, 'SELECT 1 FROM student WHERE student_id=%s', (p['student_id'],))]
+            if missing:
+                require(initial_password and 8 <= len(initial_password) <= 128,
+                        '请填写 8 至 128 字符的新账号初始密码', 422)
+                prehashed = {sid: hash_password(initial_password) for sid in missing}
         with self.db.transaction(True if commit else False) as c:
             a = self.actor(c, actor, ('SUPER', 'NORMAL'))
             catalogue = all_rows(c, 'SELECT * FROM business')
@@ -83,7 +95,7 @@ class MemberImport:
                                                 if g['group_id'] == target['group_id']), None)
                 resolved[sheet['name']] = target
                 sheet['target'] = target
-            people = merge_people(rows)
+            people = all_people
             existing = {p['student_id']: p for p in all_rows(c, 'SELECT * FROM student')}
             errors, pending, credits, verdicts, formula_keys = [], [], [], {}, set()
             for row in rows:
@@ -174,7 +186,8 @@ class MemberImport:
             new_people = [p for p in eligible if p['new']]
             for person in new_people:
                 c.execute('INSERT INTO student(student_id,name,college,password_hash) VALUES(%s,%s,%s,%s)',
-                          (person['student_id'], person['name'], person['college'], hash_password(initial_password)))
+                          (person['student_id'], person['name'], person['college'],
+                           prehashed.get(person['student_id']) or hash_password(initial_password)))
             imported = 0
             for person in eligible:
                 sid = person['student_id']

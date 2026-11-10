@@ -854,6 +854,21 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
         except Exception as exc:
             if isinstance(exc,ValueError):raise DomainError(str(exc),422) from exc
             raise DomainError('无法读取该工作簿，请检查是否为有效的 .xlsx 文件',422) from exc
+        prehashed={}
+        if commit:
+            # 密码哈希很慢（PBKDF2 60 万轮），先只读完成权限校验并确认要建号的人，在写锁外算完再进事务
+            with self.db.transaction() as c0:
+                a0=self.actor(c0,actor,('SUPER','NORMAL'))
+                from .business_schema import installed as business_installed
+                if business_installed(c0):
+                    biz0=one(c0,'SELECT * FROM business WHERE business_id=%s',(business_id,)) if business_id else one(c0,"SELECT * FROM business WHERE code='CONSULT'")
+                    require(biz0 and biz0['kind']=='FIXED','请选择咨询服务、美育或青广宣传；专项时长使用专项导入',422)
+                    require_business_owner(c0,a0,biz0['business_id'],'只能管理本人负责业务的名单')
+                missing=[p['student_id'] for p in preview['students']
+                         if not one(c0,'SELECT 1 FROM student WHERE student_id=%s',(p['student_id'],))]
+            if missing:
+                require(initial_password and 8<=len(initial_password)<=128,'请设置 8 至 128 字符的新队员初始密码',422)
+                prehashed={sid:hash_password(initial_password) for sid in missing}
         with self.db.transaction(commit) as c:
             a=self.actor(c,actor,('SUPER','NORMAL'))
             from .business_schema import installed as business_installed
@@ -926,7 +941,8 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
                 sid=person['student_id']
                 if person.get('new'):
                     c.execute('INSERT INTO student(student_id,name,college,password_hash) VALUES(%s,%s,%s,%s)',
-                              (sid,person['name'],person['college'],hash_password(initial_password)))
+                              (sid,person['name'],person['college'],
+                               prehashed.get(sid) or hash_password(initial_password)))
                 elif approvals.get(sid) and existing.get(sid) and existing[sid]['status']!='ACTIVE':
                     c.execute("UPDATE student SET status='ACTIVE' WHERE student_id=%s AND status='QUIT'",(sid,))
                 for slot_to_release in release.get(sid,[]) or []:
