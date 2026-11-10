@@ -19,7 +19,7 @@ class BusinessWorkflows(SubmissionWorkflow):
             require(term,'学期不存在',404)
             rows=[]
             for b in all_rows(c,"SELECT * FROM business WHERE code IN ('GARDEN','PUBLICITY')"):
-                if a['_role']=='NORMAL' and b['manager_admin_id']!=a['_id']: continue
+                if a['_role']=='NORMAL' and b['manager_admin_id']!=a['_id'] and b.get('total_manager_admin_id')!=a['_id']: continue
                 saved={r['week_no']:r for r in all_rows(c,'SELECT * FROM business_week WHERE semester_id=%s AND business_id=%s',(semester_id,b['business_id']))}
                 for week in range(1,term['end_week']+1):
                     start=monday(term['start_date'])+timedelta(weeks=week-1)
@@ -115,8 +115,10 @@ class BusinessWorkflows(SubmissionWorkflow):
     def _event_slot(self,c,business_id,title,duration):
         old=one(c,"SELECT slot_id FROM service_slot WHERE business_id=%s AND schedule_kind='EVENT' AND team_name=%s",(business_id,title))
         if old: return old['slot_id']
+        # 临时班次沿用该业务的负责人，否则非固定业务的排班与考勤只有超管能处理
+        biz=one(c,'SELECT manager_admin_id FROM business WHERE business_id=%s',(business_id,))
         c.execute('''INSERT INTO service_slot(business_id,schedule_kind,team_name,period_no,start_time,end_time,location,service_minutes,manager_admin_id)
-            VALUES(%s,'EVENT',%s,1,NULL,NULL,'非固定业务',%s,NULL)''',(business_id,title,max(1,duration)))
+            VALUES(%s,'EVENT',%s,1,NULL,NULL,'非固定业务',%s,%s)''',(business_id,title,max(1,duration),biz['manager_admin_id'] if biz else None))
         return c.lastrowid
 
     def _event_record(self,c,student_id,business_id,title,day,duration,admin_id,source,key,recognize=True):
@@ -131,8 +133,9 @@ class BusinessWorkflows(SubmissionWorkflow):
         slot=self._event_slot(c,business_id,title,duration)
         # The base ledger permits one active occurrence per student/slot/date. Separate source occurrences get distinct event slots.
         if one(c,"SELECT 1 FROM schedule WHERE student_id=%s AND slot_id=%s AND schedule_date=%s AND status IN ('ACTIVE','COMPLETED')",(student_id,slot,day)):
+            mgr=one(c,'SELECT manager_admin_id FROM business WHERE business_id=%s',(business_id,))
             c.execute('''INSERT INTO service_slot(business_id,schedule_kind,team_name,period_no,start_time,end_time,location,service_minutes,manager_admin_id)
-                VALUES(%s,'EVENT',%s,1,NULL,NULL,'非固定业务',%s,NULL)''',(business_id,title,max(1,duration)));slot=c.lastrowid
+                VALUES(%s,'EVENT',%s,1,NULL,NULL,'非固定业务',%s,%s)''',(business_id,title,max(1,duration),mgr['manager_admin_id'] if mgr else None));slot=c.lastrowid
         term=one(c,'SELECT * FROM semester WHERE start_date<=%s AND end_date>=%s',(day,day))
         week=(day-monday(term['start_date'])).days//7+1 if term else None
         c.execute('''INSERT INTO schedule(student_id,slot_id,admin_id,schedule_date,semester_id,week_no,recognition_minutes,source_key)
@@ -209,21 +212,23 @@ class BusinessWorkflows(SubmissionWorkflow):
             return rows
 
     def create_event(self,actor,business_name,student_id,title,service_date,service_minutes,reason,request_key):
-        from .service import require,parse_date,reason_text
+        from .service import require,parse_date,reason_text,require_business_owner
         reason=reason_text(reason);day=parse_date(service_date)
         with self.db.transaction(True) as c:
-            a=self.actor(c,actor,('SUPER',))
+            a=self.actor(c,actor,('SUPER','NORMAL'))
             require(one(c,"SELECT 1 FROM student WHERE student_id=%s AND status='ACTIVE'",(student_id,)),'队员不存在或不在队',422)
             b=self._event_business(c,business_name)
+            require_business_owner(c,a,b['business_id'])
             sid=self._event_record(c,student_id,b['business_id'],title,day,service_minutes,a['_id'],'MANUAL_EVENT','manual:'+request_key,recognize=day<=self.clock().date())
             self.audit(c,a['_id'],'CREATE_EVENT','schedule',sid,after={'service_minutes':service_minutes},reason=reason)
             return {'schedule_id':sid}
 
     def recognize_event(self,actor,schedule_id,service_minutes,reason):
-        from .service import require,reason_text
+        from .service import require,reason_text,require_business_owner
         reason=reason_text(reason)
         with self.db.transaction(True) as c:
-            a=self.actor(c,actor,('SUPER',));row=self.schedule(c,schedule_id)
+            a=self.actor(c,actor,('SUPER','NORMAL'));row=self.schedule(c,schedule_id)
+            require_business_owner(c,a,row['business_id'])
             require(row['schedule_kind']=='EVENT' and (row['source_key'] or '').startswith('manual:'),'仅适用于手动临时排班',422)
             require(type(service_minutes)==int and 0<=service_minutes<=1440,'分钟数须为0至1440的整数',422)
             require(row['schedule_date']<=self.clock().date(),'服务日期尚未到达，不能认定时长',422)
@@ -237,12 +242,13 @@ class BusinessWorkflows(SubmissionWorkflow):
             return {'schedule_id':schedule_id,'service_minutes':service_minutes}
 
     def set_event_member(self,actor,business_id,student_id,active,effective_date,reason):
-        from .service import require,parse_date,reason_text
+        from .service import require,parse_date,reason_text,require_business_owner
         reason=reason_text(reason);day=parse_date(effective_date)
         require(day>=self.clock().date(),'不能追溯改写业务归属',422)
         with self.db.transaction(True) as c:
-            a=self.actor(c,actor,('SUPER',));b=one(c,'SELECT * FROM business WHERE business_id=%s',(business_id,))
+            a=self.actor(c,actor,('SUPER','NORMAL'));b=one(c,'SELECT * FROM business WHERE business_id=%s',(business_id,))
             require(b and b['kind']=='EVENT','固定业务请通过时段归属调整',422)
+            require_business_owner(c,a,business_id)
             self._active_business(c,business_id)
             require(one(c,"SELECT 1 FROM student WHERE student_id=%s AND status='ACTIVE'",(student_id,)),'队员不存在或不在队',422)
             old=all_rows(c,'SELECT * FROM business_member WHERE business_id=%s AND student_id=%s',(business_id,student_id))

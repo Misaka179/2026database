@@ -48,6 +48,11 @@ def migrate(settings):
         for table, col, definition in additions:
             c.execute(f'SHOW COLUMNS FROM {table} LIKE %s',(col,))
             if not c.fetchone(): c.execute(f'ALTER TABLE {table} ADD {col} {definition}')
+        # 业务总负责人：与 business.manager_admin_id（业务级普通管理员/时段管理员）分开存
+        c.execute("SHOW COLUMNS FROM business LIKE 'total_manager_admin_id'")
+        if not c.fetchone():
+            c.execute('''ALTER TABLE business ADD total_manager_admin_id BIGINT UNSIGNED NULL,
+                ADD CONSTRAINT fk_business_owner FOREIGN KEY(total_manager_admin_id) REFERENCES admin(admin_id)''')
         c.execute("SHOW INDEX FROM service_slot WHERE Key_name='uq_weekly_slot'")
         if c.fetchone(): c.execute('ALTER TABLE service_slot DROP INDEX uq_weekly_slot')
         c.execute("SHOW INDEX FROM service_slot WHERE Key_name='uq_business_slot'")

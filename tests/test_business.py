@@ -124,6 +124,21 @@ class BusinessTests(unittest.TestCase):
         hours=self.s.hours(self.student);self.assertEqual(hours['total_minutes'],300)
         self.assertEqual({x['business_name'] for x in hours['business_totals']},{'咨询服务','美育'})
 
+    def test_slot_member_removal_only_touches_this_slot(self):
+        self.s.configure_business(self.sup,self.b['CONSULT']['business_id'],self.normal['id'])
+        self.term([self.consult,self.pub])
+        with self.assertRaises(DomainError):
+            self.s.remove_slot_member(self.other,self.consult,self.sid,'非业务负责人不能移出')
+        self.s.remove_slot_member(self.normal,self.consult,self.sid,'本人申请退出本班次')
+        self.assertEqual(self.rows('SELECT slot_id FROM slot_member WHERE student_id=%s',(self.sid,))[0]['slot_id'],self.pub)
+        consult_schedules=self.rows('SELECT status FROM schedule WHERE student_id=%s AND slot_id=%s',(self.sid,self.consult))
+        self.assertTrue(consult_schedules and all(r['status']=='CANCELLED' for r in consult_schedules))
+        pub_schedules=self.rows('SELECT status FROM schedule WHERE student_id=%s AND slot_id=%s',(self.sid,self.pub))
+        self.assertTrue(pub_schedules and any(r['status']=='ACTIVE' for r in pub_schedules))
+        with self.assertRaises(DomainError):
+            self.s.remove_slot_member(self.normal,self.consult,self.sid,'已不在本班次')
+        self.assertEqual(len(self.rows('SELECT slot_id FROM slot_member WHERE student_id=%s',(self.sid,))),1)
+
     def test_claim_range_per_day_return_and_repeat_approval(self):
         self.term([]);self.now=datetime(2026,9,14)
         cid=self.s.create_collection(self.sup,self.b['干部']['business_id'],'学期筹备','2026-09-07','2026-09-20',[self.sid],[{'title':'筹备','min_minutes':120,'max_minutes':240}])['collection_id']
@@ -217,7 +232,7 @@ class BusinessTests(unittest.TestCase):
         book=fixture([['张三',self.sid,'','一分队三时段']])
         self.s.import_roster(self.sup,book,commit=True,initial_password='TestPassword123!',business_id=self.b['ART']['business_id'])
         self.assertEqual(self.s.my_memberships(self.student)[0]['slot_id'],self.art)
-        self.assertTrue(self.s.import_roster(self.sup,book)['errors'])
+        self.assertTrue(self.s.import_roster(self.sup,book)['pending'])
         bad=fixture([['李四',self.demo['other_student']['id'],'','一分队五时段']])
         self.assertTrue(self.s.import_roster(self.sup,bad,business_id=self.b['ART']['business_id'])['errors'])
 

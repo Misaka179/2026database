@@ -33,11 +33,26 @@ def migrate(settings):
             assigned_by BIGINT UNSIGNED NOT NULL,assigned_at DATETIME NOT NULL,PRIMARY KEY(admin_id,group_id),
             FOREIGN KEY(admin_id) REFERENCES admin(admin_id),FOREIGN KEY(group_id) REFERENCES business_group(group_id)''',
           'member_import':'''batch_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,file_hash CHAR(64) NOT NULL,
-            request_hash CHAR(64) NOT NULL UNIQUE,admin_id BIGINT UNSIGNED NOT NULL,created_at DATETIME NOT NULL''',
+            request_hash CHAR(64) NOT NULL UNIQUE,admin_id BIGINT UNSIGNED NOT NULL,created_at DATETIME NOT NULL,
+            scope_kind VARCHAR(16) NULL,scope_id BIGINT UNSIGNED NULL,
+            imported_count INT NOT NULL DEFAULT 0,skipped_count INT NOT NULL DEFAULT 0,
+            removed_slots JSON NULL,reverted_at DATETIME NULL''',
           'member_import_row':'''batch_id BIGINT UNSIGNED NOT NULL,sheet_name VARCHAR(100) NOT NULL,row_no INT NOT NULL,
             student_id VARCHAR(32) NOT NULL,business_id BIGINT UNSIGNED NOT NULL,group_id BIGINT UNSIGNED NULL,
+            slot_id BIGINT UNSIGNED NULL,created_account TINYINT NOT NULL DEFAULT 0,
             PRIMARY KEY(batch_id,sheet_name,row_no),FOREIGN KEY(batch_id) REFERENCES member_import(batch_id)'''}
         for table,body in definitions.items():c.execute(f'CREATE TABLE IF NOT EXISTS {table} ({body}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci')
+        # 已有库补列：导入批次要记范围、结果数量、被移除的冲突时段与撤销时间，
+        # 行级要记落点时段与本行是否新建账号（撤销时据此精确回放）。
+        for col,definition in {'scope_kind':"VARCHAR(16) NULL",'scope_id':'BIGINT UNSIGNED NULL',
+                               'imported_count':'INT NOT NULL DEFAULT 0','skipped_count':'INT NOT NULL DEFAULT 0',
+                               'removed_slots':'JSON NULL','reverted_at':'DATETIME NULL'}.items():
+            c.execute('SHOW COLUMNS FROM member_import LIKE %s',(col,))
+            if not c.fetchone():c.execute(f'ALTER TABLE member_import ADD {col} {definition}')
+        for col,definition in {'slot_id':'BIGINT UNSIGNED NULL',
+                               'created_account':'TINYINT NOT NULL DEFAULT 0'}.items():
+            c.execute('SHOW COLUMNS FROM member_import_row LIKE %s',(col,))
+            if not c.fetchone():c.execute(f'ALTER TABLE member_import_row ADD {col} {definition}')
         c.execute("INSERT INTO business_window(business_id,active_from) SELECT b.business_id,'1900-01-01' FROM business b WHERE NOT EXISTS(SELECT 1 FROM business_window w WHERE w.business_id=b.business_id)")
         old=one(c,"SELECT * FROM business WHERE name='干部'");new=one(c,"SELECT * FROM business WHERE name='干部及干事'")
         if old and not new:

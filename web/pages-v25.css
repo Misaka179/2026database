@@ -33,12 +33,25 @@
   opacity: 1;
 }
 
-/* 面包屑导航 */
+/* 顶栏面包屑：去掉内边距与外边距，让文字垂直居中；两段同字号同字重 */
 .breadcrumb {
-  margin-bottom: 16px;
-  padding: 12px 0;
-  font-size: 14px;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--muted);
+}
+
+.breadcrumb span,
+.breadcrumb strong {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+/* 当前页只靠颜色区分，不加粗、不放大 */
+.breadcrumb strong {
+  color: var(--text);
 }
 
 .breadcrumb button.link {
@@ -53,6 +66,54 @@
 
 .breadcrumb button.link:hover {
   text-decoration: underline;
+}
+
+/* 页内面包屑（业务管理三级页） */
+.page-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.page-crumbs button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 400;
+  color: var(--accent);
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.page-crumbs button.link:hover {
+  text-decoration: underline;
+}
+
+.page-crumbs .crumb-sep {
+  opacity: .55;
+}
+
+/* 当前页不加粗，只靠颜色区分 */
+.page-crumbs .crumb-current {
+  max-width: 30ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--text);
+}
+
+/* 深化到第三级时的标题字号收一档 */
+.page-heading.compact h1 {
+  font-size: 21px;
+  letter-spacing: -0.005em;
 }
 
 /* 队员资料页面：标签页在左下方 */
@@ -298,6 +359,14 @@
   margin-top: 7px;
   max-width: 64ch;
   font-size: 13px;
+  color: var(--muted);
+}
+
+.page-note {
+  margin: -12px 0 16px;
+  max-width: 64ch;
+  font-size: 12px;
+  line-height: 1.8;
   color: var(--muted);
 }
 
@@ -1025,7 +1094,7 @@ dialog[open] {
 
 @media (max-width: 1240px) {
   :root {
-    --sidebar: 236px;
+    --sidebar: 206px;
   }
   .overview-grid {
     grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr);
@@ -1034,8 +1103,9 @@ dialog[open] {
 
 @media (max-width: 1100px) {
   :root {
-    --sidebar: 232px;
+    --sidebar: 200px;
   }
+
   .main-content {
     padding: 26px 24px 48px;
   }
@@ -1408,4 +1478,69 @@ dialog[open] {
   .quick-link {
     transition: none !important;
   }
+}
+
+/* 服务班次页：按星期折叠的分组列表 */
+.slot-week-list {
+  padding: 4px 8px 10px;
+}
+
+.slot-week {
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.slot-week summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  cursor: pointer;
+  list-style: none;
+  background: var(--bg-sunken);
+}
+
+.slot-week summary::-webkit-details-marker {
+  display: none;
+}
+
+.slot-week summary::marker {
+  content: '';
+}
+
+.slot-week-name {
+  min-width: 40px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.slot-week-side {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.slot-week-manager {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.slot-week summary .text-button {
+  flex: 0 0 auto;
+}
+
+.slot-week[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.slot-week-body {
+  padding: 0 4px;
+}
+
+.slot-week-body table {
+  margin: 0;
 }

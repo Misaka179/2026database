@@ -39,19 +39,70 @@ def migrate(settings):
             FOREIGN KEY(scope_id) REFERENCES leader_scope(scope_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci''')
         # Existing applications keep their original final-review route.
+        _migrate_business_scopes(c)
         c.execute("INSERT IGNORE INTO feature_migration(name,completed_at) VALUES('scoped_leaders_v1',NOW())")
+
+
+def _migrate_business_scopes(c):
+    """把「分队负责人」从按业务代码硬编码扩成 业务 × 星期 一张表。
+
+    旧实现只给咨询服务 7 个分队、美育 1 个整业务范围；这里补上 business_id，
+    为每个固定业务的每个星期生成一条范围行，美育的整业务范围拆成 7 条并停用旧行。
+    旧的 scope_id 不删除：历史日报与退队初审仍挂在它上面。
+    """
+    marker = 'business_scopes_v1'
+    if one(c, 'SELECT 1 FROM feature_migration WHERE name=%s', (marker,)):
+        return
+    if not one(c, "SHOW TABLES LIKE 'business'"):
+        return
+    if not one(c, "SHOW COLUMNS FROM leader_scope LIKE 'business_id'"):
+        c.execute('ALTER TABLE leader_scope ADD business_id BIGINT UNSIGNED NULL, ADD active TINYINT NOT NULL DEFAULT 1')
+    c.execute("SHOW INDEX FROM leader_scope WHERE Key_name='uq_business_scope'")
+    if not c.fetchone():
+        c.execute('ALTER TABLE leader_scope ADD UNIQUE KEY uq_business_scope(business_id,weekday)')
+    c.execute("SHOW COLUMNS FROM leader_scope LIKE 'scope_id'")
+    column = c.fetchone()
+    # scope_id 被日报/退队初审外键引用，MySQL 不允许改成 AUTO_INCREMENT；新范围显式取 max+1。
+    if not column:
+        return
+    c.execute('''UPDATE leader_scope g JOIN business b ON b.code=g.business_code
+        SET g.business_id=b.business_id WHERE g.business_id IS NULL''')
+    # 整业务的旧范围（美育）：负责人复制到该业务每个星期，旧行停用以避免重复日报。
+    legacy = all_rows(c, 'SELECT * FROM leader_scope WHERE weekday IS NULL AND business_id IS NOT NULL AND active=1')
+    for row in legacy:
+        biz = one(c, 'SELECT * FROM business WHERE business_id=%s', (row['business_id'],))
+        for day in range(1, 8):
+            if not one(c, 'SELECT 1 FROM leader_scope WHERE business_id=%s AND weekday=%s', (row['business_id'], day)):
+                c.execute('''INSERT INTO leader_scope(scope_id,name,business_id,business_code,weekday,admin_id,assigned_at,active)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,1)''',
+                          (_next_scope(c), f"{biz['name']}周{'一二三四五六日'[day-1]}分队", row['business_id'],
+                           row['business_code'], day, row['admin_id'], row['assigned_at']))
+        c.execute('UPDATE leader_scope SET active=0 WHERE scope_id=%s', (row['scope_id'],))
+    # 任意固定业务，每个星期都能有分队负责人
+    for biz in all_rows(c, "SELECT * FROM business WHERE kind='FIXED' AND status='ACTIVE'"):
+        for day in range(1, 8):
+            if not one(c, 'SELECT 1 FROM leader_scope WHERE business_id=%s AND weekday=%s', (biz['business_id'], day)):
+                c.execute('INSERT INTO leader_scope(scope_id,name,business_id,business_code,weekday,active) VALUES(%s,%s,%s,%s,%s,1)',
+                          (_next_scope(c), f"{biz['name']}周{'一二三四五六日'[day-1]}分队", biz['business_id'], biz['code'], day))
+    c.execute('INSERT IGNORE INTO feature_migration(name,completed_at) VALUES(%s,NOW())', (marker,))
+
+
+def _next_scope(c):
+    row = one(c, 'SELECT COALESCE(MAX(scope_id),0)+1 AS next_id FROM leader_scope')
+    return int(row['next_id'])
 
 
 class LeaderService:
     def leader_slots(self, c, admin_id):
         return all_rows(c, '''SELECT t.*,b.name AS business_name,b.code AS business_code FROM service_slot t
-            JOIN business b ON b.business_id=t.business_id JOIN leader_scope g ON g.business_code=b.code
-            AND (g.weekday IS NULL OR g.weekday=t.weekday) WHERE g.admin_id=%s''', (admin_id,))
+            JOIN business b ON b.business_id=t.business_id
+            JOIN leader_scope g ON g.business_id=b.business_id AND g.weekday=t.weekday AND g.active=1
+            WHERE g.admin_id=%s''', (admin_id,))
 
     def fixed_hour_recipients(self, c, slot_id):
         if not installed(c): return self._super_recipients(c)
         rows = all_rows(c, '''SELECT ad.admin_id FROM service_slot t JOIN business b ON b.business_id=t.business_id
-            JOIN leader_scope g ON g.business_code=b.code AND (g.weekday IS NULL OR g.weekday=t.weekday)
+            JOIN leader_scope g ON g.business_id=b.business_id AND g.weekday=t.weekday AND g.active=1
             JOIN admin ad ON ad.admin_id=g.admin_id LEFT JOIN student st ON st.student_id=ad.leader_student_id
             WHERE t.slot_id=%s AND ad.status='ACTIVE' AND (st.student_id IS NULL OR st.status='ACTIVE')''', (slot_id,))
         return [('admin', r['admin_id']) for r in rows] or self._super_recipients(c)
@@ -67,8 +118,36 @@ class LeaderService:
     def leader_directory(self, actor):
         with self.db.transaction() as c:
             self.actor(c, actor, ('SUPER',))
-            return all_rows(c, '''SELECT g.*,a.name AS admin_name,a.account,a.leader_student_id AS student_id
-                FROM leader_scope g LEFT JOIN admin a ON a.admin_id=g.admin_id ORDER BY scope_id''')
+            return all_rows(c, '''SELECT g.*,a.name AS admin_name,a.account,a.leader_student_id AS student_id,b.name AS business_name
+                FROM leader_scope g LEFT JOIN admin a ON a.admin_id=g.admin_id LEFT JOIN business b ON b.business_id=g.business_id
+                ORDER BY g.business_id,g.weekday,g.scope_id''')
+
+    def _appoint_scope(self, c, actor_id, scope, student_id, reason):
+        """把一个管理范围指派给某个在队队员；student_id 为空表示撤销。"""
+        from .service import require
+        aid = None; account = None
+        if student_id:
+            st = one(c, "SELECT * FROM student WHERE student_id=%s AND status='ACTIVE'", (student_id,))
+            require(st, '请选择正常在队队员', 422)
+            ad = one(c, 'SELECT * FROM admin WHERE leader_student_id=%s', (student_id,))
+            if ad:
+                aid, account = ad['admin_id'], ad['account']
+                c.execute("UPDATE admin SET status='ACTIVE' WHERE admin_id=%s", (aid,))
+            else:
+                account = 'lead-'+student_id
+                require(not one(c, 'SELECT 1 FROM admin WHERE account=%s', (account,)), '负责人账号已占用，请先核对账号', 409)
+                c.execute("INSERT INTO admin(name,account,password_hash,role,leader_student_id) VALUES(%s,%s,%s,'LEAD',%s)",
+                          (st['name'], account, st['password_hash'], student_id))
+                aid = c.lastrowid
+        if scope['admin_id'] == aid:
+            return {'account': account, 'scope_id': scope['scope_id'], 'replayed': True}
+        c.execute('UPDATE leader_scope SET admin_id=%s,assigned_at=%s WHERE scope_id=%s', (aid, self.clock(), scope['scope_id']))
+        self.audit(c, actor_id, 'APPOINT_LEADER', 'leader_scope', scope['scope_id'],
+                   {'admin_id': scope['admin_id']}, {'admin_id': aid, 'student_id': student_id}, reason)
+        if aid:
+            self._notice(c, [('admin', aid)], f'leader-assigned:{scope["scope_id"]}:{self.clock().isoformat()}', 'ACCOUNT',
+                         '负责人管理范围已更新', scope['name']+'已授权给你。请使用负责人账号登录。', 'lead-workspace', scope['scope_id'])
+        return {'account': account, 'scope_id': scope['scope_id'], 'password_hint': '使用该队员当前的志愿者密码'}
 
     def appoint_leader(self, actor, scope_id, student_id, reason):
         from .service import require, reason_text
@@ -77,33 +156,30 @@ class LeaderService:
             a = self.actor(c, actor, ('SUPER',))
             scope = one(c, 'SELECT * FROM leader_scope WHERE scope_id=%s FOR UPDATE', (scope_id,))
             require(scope, '管理范围不存在', 404)
-            aid = None; account = None
-            if student_id:
-                st = one(c, "SELECT * FROM student WHERE student_id=%s AND status='ACTIVE'", (student_id,))
-                require(st, '请选择正常在队队员', 422)
-                ad = one(c, 'SELECT * FROM admin WHERE leader_student_id=%s', (student_id,))
-                if ad:
-                    aid, account = ad['admin_id'], ad['account']
-                    c.execute("UPDATE admin SET status='ACTIVE' WHERE admin_id=%s", (aid,))
-                else:
-                    account = 'lead-'+student_id
-                    require(not one(c, 'SELECT 1 FROM admin WHERE account=%s', (account,)), '负责人账号已占用，请先核对账号', 409)
-                    c.execute("INSERT INTO admin(name,account,password_hash,role,leader_student_id) VALUES(%s,%s,%s,'LEAD',%s)",
-                              (st['name'], account, st['password_hash'], student_id))
-                    aid = c.lastrowid
-            if scope['admin_id'] == aid:
-                return {'account': account, 'scope_id': scope_id, 'replayed': True}
-            c.execute('UPDATE leader_scope SET admin_id=%s,assigned_at=%s WHERE scope_id=%s', (aid,self.clock(),scope_id))
-            self.audit(c,a['_id'],'APPOINT_LEADER','leader_scope',scope_id,
-                       {'admin_id':scope['admin_id']},{'admin_id':aid,'student_id':student_id},reason)
-            self._notice(c,[('admin',aid)],f'leader-assigned:{scope_id}:{self.clock().isoformat()}','ACCOUNT',
-                         '负责人管理范围已更新',scope['name']+'已授权给你。请使用负责人账号登录。','lead-workspace',scope_id)
-            return {'account':account,'scope_id':scope_id,'password_hint':'使用该队员当前的志愿者密码'}
+            require(int(scope.get('active', 1)) == 1, '该管理范围已停用，请改用按星期设置的分队范围', 422)
+            return self._appoint_scope(c, a['_id'], scope, student_id, reason)
+
+    def appoint_business_leader(self, actor, business_id, weekday, student_id, reason):
+        """业务管理页直接用「业务 + 星期」任命分队负责人；业务负责人对本业务有此人事权。"""
+        from .service import require, reason_text, require_business_owner
+        reason = reason_text(reason)
+        with self.db.transaction(True) as c:
+            a = self.actor(c, actor, ('SUPER', 'NORMAL'))
+            require(1 <= int(weekday) <= 7, '星期无效', 422)
+            require_business_owner(c, a, business_id, '只能为本业务设置分队负责人')
+            biz = one(c, 'SELECT * FROM business WHERE business_id=%s', (business_id,))
+            require(biz, '业务不存在', 404)
+            require(biz['status'] == 'ACTIVE', '仅启用中的业务可设置分队负责人', 422)
+            scope = one(c, '''SELECT * FROM leader_scope WHERE business_id=%s AND weekday=%s AND active=1 FOR UPDATE''',
+                        (business_id, int(weekday)))
+            require(scope, '该业务该星期还没有分队负责人范围', 404)
+            return self._appoint_scope(c, a['_id'], scope, student_id, reason)
 
     def _withdrawal_leader_scope(self, c, student_id):
         rows = all_rows(c, '''SELECT DISTINCT g.scope_id FROM slot_member m JOIN service_slot t ON t.slot_id=m.slot_id
-            JOIN business b ON b.business_id=t.business_id JOIN leader_scope g ON g.business_code=b.code
-            AND (g.weekday IS NULL OR g.weekday=t.weekday) WHERE m.student_id=%s ORDER BY g.scope_id''', (student_id,))
+            JOIN business b ON b.business_id=t.business_id
+            JOIN leader_scope g ON g.business_id=b.business_id AND g.weekday=t.weekday AND g.active=1
+            WHERE m.student_id=%s ORDER BY g.scope_id''', (student_id,))
         # User-approved compatibility: ambiguous legacy memberships go directly
         # to global SUPER until the roster has been reconciled; never guess a team.
         return rows[0]['scope_id'] if len(rows)==1 else None
@@ -154,7 +230,7 @@ class LeaderService:
         with self.db.transaction() as c:
             a=self.actor(c,actor,('LEAD',))
             slots=list(self.leader_slots(c,a['_id']));ids=[r['slot_id'] for r in slots]
-            scopes=all_rows(c,'SELECT scope_id,name FROM leader_scope WHERE admin_id=%s',(a['_id'],))
+            scopes=all_rows(c,'SELECT scope_id,name FROM leader_scope WHERE admin_id=%s AND active=1',(a['_id'],))
             result={'scopes':scopes,'slots':slots,'students':[],'schedules':[],'records':[],'admins':[],
                     'withdrawal':[],'reports':[],'logs':[],'semesters':[]}
             if not ids:return result
@@ -211,10 +287,11 @@ class LeaderService:
             if not installed(c):return {'created':0}
             count=0
             scopes=all_rows(c,'''SELECT g.* FROM leader_scope g JOIN admin a ON a.admin_id=g.admin_id
-                JOIN student st ON st.student_id=a.leader_student_id WHERE a.status='ACTIVE' AND st.status='ACTIVE' ''')
+                JOIN student st ON st.student_id=a.leader_student_id
+                WHERE a.status='ACTIVE' AND st.status='ACTIVE' AND g.active=1 AND g.weekday IS NOT NULL ''')
             for scope in scopes:
-                ids=[r['slot_id'] for r in all_rows(c,'''SELECT t.slot_id FROM service_slot t JOIN business b ON b.business_id=t.business_id
-                    WHERE b.code=%s AND (%s IS NULL OR t.weekday=%s)''',(scope['business_code'],scope['weekday'],scope['weekday']))]
+                ids=[r['slot_id'] for r in all_rows(c,'''SELECT t.slot_id FROM service_slot t
+                    WHERE t.business_id=%s AND t.weekday=%s AND t.status='ACTIVE' ''',(scope['business_id'],scope['weekday']))]
                 if not ids:continue
                 marks=','.join(['%s']*len(ids))
                 days=all_rows(c,f'''SELECT s.schedule_date,MAX(t.end_time) AS ends FROM schedule s JOIN service_slot t ON t.slot_id=s.slot_id

@@ -51,8 +51,10 @@ class DirectoryManagement(MemberImport,InboxService):
         return c.lastrowid
 
     def add_business_slot(self,actor,business_id,**slot):
+        from .service import require_business_owner
         with self.db.transaction(True) as c:
-            a=self.actor(c,actor,('SUPER',));sid=self._add_business_slot(c,business_id,slot)
+            a=self.actor(c,actor,('SUPER','NORMAL'));require_business_owner(c,a,business_id,'只能为本业务添加时段')
+            sid=self._add_business_slot(c,business_id,slot)
             self.audit(c,a['_id'],'ADD_BUSINESS_SLOT','service_slot',sid,after=slot)
             return {'slot_id':sid}
 
@@ -133,13 +135,45 @@ class DirectoryManagement(MemberImport,InboxService):
             self.audit(c,a['_id'],'RESTORE_BUSINESS' if active else 'ARCHIVE_BUSINESS','business',business_id,{'status':b['status']},{'status':desired},reason)
             return {'status':desired}
 
+    def assign_slot_managers(self,actor,business_id,weekday,manager_admin_id,reason):
+        from .service import require,reason_text
+        reason=reason_text(reason)
+        with self.db.transaction(True) as c:
+            a=self.actor(c,actor,('SUPER',));b=self._active_business(c,business_id)
+            require(b['kind']=='FIXED','只有固定业务可以按分队设置负责人',422)
+            if manager_admin_id is not None:
+                require(one(c,"SELECT admin_id FROM admin WHERE admin_id=%s AND role='NORMAL' AND status='ACTIVE'",(manager_admin_id,)),'负责人须为有效普通管理员',422)
+            ids=[r['slot_id'] for r in all_rows(c,"SELECT slot_id FROM service_slot WHERE business_id=%s AND weekday=%s AND status='ACTIVE'",(business_id,weekday))]
+            require(ids,'该分队没有可设置的时段',422)
+            marks=','.join(['%s']*len(ids))
+            c.execute(f'UPDATE service_slot SET manager_admin_id=%s WHERE slot_id IN ({marks})',[manager_admin_id]+ids)
+            self.sync_semesters(c)
+            self.audit(c,a['_id'],'ASSIGN_SLOT_MANAGERS','business',business_id,after={'weekday':weekday,'manager_admin_id':manager_admin_id,'slot_ids':ids},reason=reason)
+            return {'weekday':weekday,'slot_ids':ids}
+
+    def create_group(self,actor,business_id,name,reason):
+        from .service import require,reason_text,require_business_owner
+        name=(name or '').strip();require(1<=len(name)<=100,'请填写有效的小组名称',422)
+        reason=reason_text(reason)
+        with self.db.transaction(True) as c:
+            a=self.actor(c,actor,('SUPER','NORMAL'));b=self._active_business(c,business_id)
+            require_business_owner(c,a,business_id)
+            require(b['kind']=='EVENT','只有非固定业务可以建小组',422)
+            require(not one(c,'SELECT 1 FROM business_group WHERE business_id=%s AND name=%s',(business_id,name)),'该业务下已有同名小组',409)
+            c.execute('INSERT INTO business_group(business_id,name) VALUES(%s,%s)',(business_id,name));gid=c.lastrowid
+            self.audit(c,a['_id'],'CREATE_GROUP','business_group',gid,after={'business_id':business_id,'name':name},reason=reason)
+            return {'group_id':gid}
+
     def business_groups(self,actor,business_id=None):
         with self.db.transaction() as c:
             a=self.actor(c,actor);sql='SELECT g.*,b.name AS business_name,b.status AS business_status FROM business_group g JOIN business b ON b.business_id=g.business_id';args=[]
             if business_id:sql+=' WHERE g.business_id=%s';args.append(business_id)
             rows=list(all_rows(c,sql+' ORDER BY g.group_id',args))
             for r in rows:
-                r['can_manage']=a['_role']=='SUPER' or a['_role']=='NORMAL' and bool(one(c,'SELECT 1 FROM collection_manager WHERE admin_id=%s AND business_id=%s',(a['_id'],r['business_id'])) or one(c,'SELECT 1 FROM collection_group_manager WHERE admin_id=%s AND group_id=%s',(a['_id'],r['group_id'])))
+                r['can_manage']=a['_role']=='SUPER' or a['_role']=='NORMAL' and bool(
+                    one(c,'SELECT 1 FROM business WHERE business_id=%s AND total_manager_admin_id=%s',(r['business_id'],a['_id']))
+                    or one(c,'SELECT 1 FROM collection_manager WHERE admin_id=%s AND business_id=%s',(a['_id'],r['business_id']))
+                    or one(c,'SELECT 1 FROM collection_group_manager WHERE admin_id=%s AND group_id=%s',(a['_id'],r['group_id'])))
                 r['member_count']=len(self._group_people(c,r['group_id']))
             return rows
 
@@ -162,10 +196,11 @@ class DirectoryManagement(MemberImport,InboxService):
             c.execute('INSERT INTO group_member(group_id,student_id,effective_from,effective_until) VALUES(%s,%s,%s,%s)',(gid,sid,day,following))
 
     def set_group_member(self,actor,group_id,student_id,active,effective_date,reason):
-        from .service import require,reason_text,parse_date
+        from .service import require,reason_text,parse_date,require_business_owner
         reason=reason_text(reason);day=parse_date(effective_date);require(day>=self.clock().date(),'不能追改历史小组归属',422)
         with self.db.transaction(True) as c:
-            a=self.actor(c,actor,('SUPER',));g=one(c,'SELECT * FROM business_group WHERE group_id=%s',(group_id,));require(g,'小组不存在',404);self._active_business(c,g['business_id'])
+            a=self.actor(c,actor,('SUPER','NORMAL'));g=one(c,'SELECT * FROM business_group WHERE group_id=%s',(group_id,));require(g,'小组不存在',404);self._active_business(c,g['business_id'])
+            require_business_owner(c,a,g['business_id'])
             require(one(c,"SELECT 1 FROM student WHERE student_id=%s AND status='ACTIVE'",(student_id,)),'队员不存在或不在队',422)
             c.execute('DELETE FROM group_member WHERE group_id=%s AND student_id=%s AND effective_from>=%s',(group_id,student_id,day))
             c.execute('UPDATE group_member SET effective_until=%s WHERE group_id=%s AND student_id=%s AND effective_from<%s AND (effective_until IS NULL OR effective_until>%s)',(day,group_id,student_id,day,day))

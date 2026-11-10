@@ -43,9 +43,11 @@ class RosterParserTests(unittest.TestCase):
         self.assertEqual(r['students'][0]['slots'],[[1,1],[5,4]])
         self.assertFalse(r['errors'])
 
-    def test_conflicting_names_and_formulas_are_blocked(self):
+    def test_duplicate_names_and_formulas_are_reported_not_merged(self):
         r=parse_workbook(fixture([['甲','00123','','一分队一时段'],['乙','00123','','一分队一时段'],['丙','=123','','一分队一时段']]))
-        self.assertEqual(len(r['errors']),2)
+        self.assertEqual(len(r['students'][0]['names']),2)
+        self.assertEqual(len(r['skipped']),1)
+        self.assertEqual(len(r['errors']),0)
 
     def test_unknown_category_is_visible_not_an_invented_slot(self):
         r=parse_workbook(fixture([['甲','123','','开心花园A组']]))
@@ -98,9 +100,10 @@ class FixedRosterTests(unittest.TestCase):
         self.assertEqual(preview['new_students'],1)
         self.assertEqual(self.s.students(self.super,'00123'),[])
         result=self.s.import_roster(self.super,data,commit=True,initial_password='ImportTest123!')
-        self.assertEqual(result,{'new_students':1,'existing_students':0,'added_memberships':2})
-        result=self.s.import_roster(self.super,data,commit=True,initial_password='OtherPassword123!')
-        self.assertEqual(result['new_students'],0);self.assertEqual(result['added_memberships'],0)
+        self.assertEqual(result['new_students'],1);self.assertEqual(result['existing_students'],0)
+        self.assertEqual(result['added_memberships'],2)
+        replay=self.s.import_roster(self.super,data,commit=True,initial_password='OtherPassword123!')
+        self.assertEqual(replay['new_students'],0);self.assertEqual(replay['added_memberships'],0)
         self.s.login('student','00123','ImportTest123!')
         with self.assertRaises(DomainError):self.s.login('student','00123','OtherPassword123!')
         self.assertEqual(len(self.s.students(self.super,'00123')[0]['slots']),2)

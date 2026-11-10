@@ -212,6 +212,8 @@ class RosterImport(Model):
     commit:bool=False
     initial_password:str|None=Field(default=None,min_length=8,max_length=128)
     accept_warnings:bool=False
+    slot_id:int|None=Field(default=None,gt=0)
+    approvals:dict[str,bool]=Field(default_factory=dict)
 
 
 class LeaveCreate(Model):
@@ -557,6 +559,14 @@ class BusinessManager(Model):
     manager_admin_id:int|None=Field(default=None,gt=0)
 
 
+class BusinessOwner(Reason):
+    owner_admin_id:int|None=Field(default=None,gt=0)
+
+
+class BusinessLeader(Reason):
+    student_id:str|None=Field(default=None,max_length=32)
+
+
 class BusinessWeek(Reason):
     working:bool
 
@@ -707,17 +717,22 @@ class EventMember(Reason):
     effective_date:date
 
 
-@app.put('/businesses/{business_id}/members/{student_id}',tags=['业务管理'])
+@app.delete('/slots/{slot_id}/members/{student_id}',tags=['业务管理'],summary='移出班次队员')
+def remove_slot_member(slot_id:int,student_id:str,body:Reason,actor:A,service:S):
+    return output(service.remove_slot_member(actor,slot_id,student_id,**body.model_dump()))
+
+
+@app.put('/businesses/{business_id}/members/{student_id}',tags=['业务管理'],summary='调整专项业务归属')
 def set_event_member(business_id:int,student_id:str,body:EventMember,actor:A,service:S):
     return service.set_event_member(actor,business_id,student_id,**body.model_dump())
 
 
-@app.post('/schedules/{schedule_id}/recognize-event',tags=['业务管理'])
+@app.post('/schedules/{schedule_id}/recognize-event',tags=['业务管理'],summary='认定临时服务时长')
 def recognize_event(schedule_id:int,body:HoursEdit,actor:A,service:S):
     return service.recognize_event(actor,schedule_id,**body.model_dump())
 
 
-@app.get('/businesses',tags=['业务管理'])
+@app.get('/businesses',tags=['业务管理'],summary='查询业务列表')
 def businesses(actor:A,service:S):
     return service.businesses(actor)
 
@@ -762,76 +777,128 @@ class MemberImportRequest(Model):
     file_base64:str=Field(min_length=1,max_length=12*1024*1024)
     mappings:dict[str,MemberTarget|None]=Field(default_factory=dict)
     decisions:dict[str,MemberChoice]=Field(default_factory=dict)
+    approvals:dict[str,bool]=Field(default_factory=dict)
+    scope:MemberTarget|None=None
     initial_password:str|None=Field(default=None,min_length=8,max_length=128)
     commit:bool=False
 
 
-@app.post('/businesses',tags=['业务管理'])
+@app.post('/businesses',tags=['业务管理'],summary='新增业务')
 def create_business(body:BusinessCreate,actor:A,service:S):
     return service.create_business(actor,**body.model_dump())
 
 
-@app.patch('/businesses/{business_id}',tags=['业务管理'])
+@app.patch('/businesses/{business_id}',tags=['业务管理'],summary='业务改名')
 def rename_business(business_id:int,body:BusinessRename,actor:A,service:S):
     return service.rename_business(actor,business_id,**body.model_dump())
 
 
-@app.post('/businesses/{business_id}/slots',tags=['业务管理'])
+@app.post('/businesses/{business_id}/slots',tags=['业务管理'],summary='添加固定时段')
 def add_business_slot(business_id:int,body:BusinessSlot,actor:A,service:S):
     return service.add_business_slot(actor,business_id,**body.model_dump())
 
 
-@app.get('/businesses/{business_id}/archive-impact',tags=['业务管理'])
+@app.get('/businesses/{business_id}/archive-impact',tags=['业务管理'],summary='查询归档影响')
 def archive_impact(business_id:int,actor:A,service:S):
     return service.archive_impact(actor,business_id)
 
 
-@app.post('/businesses/{business_id}/archive',tags=['业务管理'])
+@app.post('/businesses/{business_id}/archive',tags=['业务管理'],summary='归档业务')
 def archive_business(business_id:int,body:BusinessStatus,actor:A,service:S):
     return service.change_business_status(actor,business_id,False,**body.model_dump())
 
 
-@app.post('/businesses/{business_id}/restore',tags=['业务管理'])
+@app.post('/businesses/{business_id}/restore',tags=['业务管理'],summary='恢复业务')
 def restore_business(business_id:int,body:BusinessStatus,actor:A,service:S):
     return service.change_business_status(actor,business_id,True,**body.model_dump())
 
 
-@app.get('/business-groups',tags=['小组与成员'])
+class SlotManagers(Reason):
+    weekday:int=Field(ge=1,le=7)
+    manager_admin_id:int|None=Field(default=None,gt=0)
+
+
+@app.put('/businesses/{business_id}/slot-managers',tags=['业务管理'],summary='按分队设置班次负责人')
+def assign_slot_managers(business_id:int,body:SlotManagers,actor:A,service:S):
+    return service.assign_slot_managers(actor,business_id,**body.model_dump())
+
+
+class GroupCreate(Reason):
+    business_id:int=Field(gt=0)
+    name:str=Field(min_length=1,max_length=100)
+
+
+@app.get('/business-groups',tags=['小组与成员'],summary='查询小组')
 def business_groups(actor:A,service:S,business_id:int|None=None):
     return service.business_groups(actor,business_id)
 
 
-@app.get('/business-groups/{group_id}/members',tags=['小组与成员'])
+@app.post('/business-groups',tags=['小组与成员'],summary='新增小组')
+def create_business_group(body:GroupCreate,actor:A,service:S):
+    return service.create_group(actor,**body.model_dump())
+
+
+@app.get('/business-groups/{group_id}/members',tags=['小组与成员'],summary='查询小组成员')
 def group_members(group_id:int,actor:A,service:S):
     return service.group_members(actor,group_id)
 
 
-@app.put('/business-groups/{group_id}/members/{student_id}',tags=['小组与成员'])
+@app.put('/business-groups/{group_id}/members/{student_id}',tags=['小组与成员'],summary='调整小组成员')
 def set_group_member(group_id:int,student_id:str,body:EventMember,actor:A,service:S):
     return service.set_group_member(actor,group_id,student_id,**body.model_dump())
 
 
-@app.post('/member-imports',tags=['小组与成员'])
+@app.post('/member-imports',tags=['小组与成员'],summary='导入小组成员')
 def import_members(body:MemberImportRequest,actor:A,service:S):
     return service.import_members(actor,**body.model_dump())
 
 
-@app.put('/businesses/{business_id}/manager',tags=['业务管理'])
+@app.get('/member-imports',tags=['小组与成员'],summary='导入批次列表')
+def member_import_list(actor:A,service:S,business_id:int|None=None,limit:int=30):
+    return service.member_import_list(actor,business_id,limit)
+
+
+@app.get('/member-imports/{batch_id}',tags=['小组与成员'],summary='导入批次详情')
+def member_import_batch(batch_id:int,actor:A,service:S):
+    return service.member_import_batch(actor,batch_id)
+
+
+@app.post('/member-imports/{batch_id}/revert',tags=['小组与成员'],summary='撤销导入批次')
+def revert_member_import(batch_id:int,actor:A,service:S):
+    return service.revert_member_import(actor,batch_id)
+
+
+@app.put('/businesses/{business_id}/manager',tags=['业务管理'],summary='设置业务负责人')
 def business_manager(business_id:int,body:BusinessManager,actor:A,service:S):
     return service.configure_business(actor,business_id,body.manager_admin_id)
 
 
-@app.get('/business-weeks',tags=['业务管理'])
+@app.put('/businesses/{business_id}/owner',tags=['业务管理'],summary='设置业务总负责人')
+def business_owner(business_id:int,body:BusinessOwner,actor:A,service:S):
+    return service.configure_business_owner(actor,business_id,body.owner_admin_id,body.reason)
+
+
+@app.get('/businesses/{business_id}/admins',tags=['业务管理'],summary='本业务可选的管理员')
+def business_admins(business_id:int,actor:A,service:S):
+    return service.business_admins(actor,business_id)
+
+
+@app.put('/businesses/{business_id}/leaders/{weekday}',tags=['业务管理'],summary='设置分队负责人')
+def business_leader(business_id:int,weekday:int,body:BusinessLeader,actor:A,service:S):
+    return service.appoint_business_leader(actor,business_id,weekday,body.student_id,body.reason)
+
+
+@app.get('/business-weeks',tags=['业务管理'],summary='查询每周开工安排')
 def business_weeks(semester_id:int,actor:A,service:S):
     return service.business_weeks(actor,semester_id)
 
 
-@app.put('/businesses/{business_id}/semesters/{semester_id}/weeks/{week_no}',tags=['业务管理'])
+@app.put('/businesses/{business_id}/semesters/{semester_id}/weeks/{week_no}',tags=['业务管理'],summary='更正每周开工安排')
 def business_week(business_id:int,semester_id:int,week_no:int,body:BusinessWeek,actor:A,service:S):
     return service.set_business_week(actor,business_id,semester_id,week_no,**body.model_dump())
 
 
-@app.post('/schedules/{schedule_id}/confirm-weekly',tags=['业务管理'])
+@app.post('/schedules/{schedule_id}/confirm-weekly',tags=['业务管理'],summary='确认花园本周服务')
 def confirm_weekly(schedule_id:int,body:Reason,actor:A,service:S):
     return service.confirm_garden(actor,schedule_id,body.reason)
 
@@ -882,7 +949,7 @@ def specialty_template(actor:A,service:S):
     return FileResponse(TEMPLATES_ROOT/'专项时长导入模板.xlsx',filename='specialty-hours-template.xlsx',headers={'Cache-Control':'no-store'})
 
 
-@app.post('/business-events',tags=['业务管理'])
+@app.post('/business-events',tags=['业务管理'],summary='录入临时服务')
 def create_event(body:EventCreate,actor:A,service:S):
     return service.create_event(actor,**body.model_dump())
 

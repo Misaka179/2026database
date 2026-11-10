@@ -2,27 +2,7 @@
 const businessOptions=()=>[['','全部业务'],...(state.data.businesses||[]).map(b=>[b.business_id,b.name])];
 const fileBase64=file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result.split(',')[1]);reader.onerror=()=>reject(new Error('文件读取失败'));reader.readAsDataURL(file);});
 function businessFilter(){return `<div class="field business-filter"><label for="business-filter">业务</label><select id="business-filter" name="business_id">${businessOptions().map(([id,name])=>`<option value="${id}" ${String(state.businessId||'')===String(id)?'selected':''}>${esc(name)}</option>`).join('')}</select></div>`;}
-async function businessesPage(){
- const seq=++state.sequence;
- const editable=state.role==='SUPER';
- const biz=state.data.businesses||[];
- $('#main').innerHTML=heading('业务管理','维护业务、固定时段及负责人；停用归档保留历史，可恢复。',editable?'<div class="button-row"><button class="btn primary" data-action="business-create">新增业务</button><button class="btn" data-action="manual-event">录入临时服务</button></div>':'')+
- `<section class="panel">${table(['业务','类型 / 状态','管理方式','操作'],biz.filter(b=>editable||b.can_collect||b.can_manage||b.manager_scope!=='NONE').map(b=>{
-   const drill=['FIXED','WEEKLY'].includes(b.kind)
-     ?`<button class="text-button" data-action="view-business-slots" data-id="${b.business_id}">查看班次</button>`
-     :`<button class="text-button" data-action="view-business-groups" data-id="${b.business_id}">查看小组</button>`;
-   const manage=!editable?'':(b.status==='ARCHIVED'
-     ?`<button class="text-button" data-action="business-restore" data-id="${b.business_id}">恢复业务</button>`
-     :`<button class="text-button" data-action="business-rename" data-id="${b.business_id}">改名</button><button class="text-button" data-action="business-archive" data-id="${b.business_id}">停用归档</button>${b.kind==='FIXED'?`<button class="text-button" data-action="business-slot" data-id="${b.business_id}">添加时段</button>`:''}${b.manager_scope==='BUSINESS'?`<button class="text-button" data-action="business-manager" data-id="${b.business_id}">设置管理员</button>`:b.kind==='EVENT'?`<button class="text-button" data-action="event-member" data-id="${b.business_id}">调整业务名单</button>`:'<button class="text-button" data-page="basics">时段与成员设置</button>'}`);
-   return `<tr><td>${esc(b.name)}</td><td>${b.kind==='FIXED'?'固定时段':b.kind==='WEEKLY'?'每周岗位':'非固定业务'}<small>${badge(b.status||'ACTIVE')}</small></td><td>${b.manager_scope==='SLOT'?'按时段管理':b.manager_scope==='BUSINESS'?esc(adminName(b.manager_admin_id)):'按征集管理范围授权'}</td><td><div class="row-actions">${drill}${manage}</div></td></tr>`;
- }))}</section>`+
- `<div class="query-form"><div class="field"><label for="business-term">查看学期</label><select id="business-term">${(state.data.semesters||[]).map(t=>`<option value="${t.semester_id}" ${String(state.businessTerm||'')===String(t.semester_id)?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div><button class="btn" data-action="business-term">查看每周安排</button></div><section class="panel" id="business-weeks">正在读取每周安排…</section>`;
- const term=$('#business-term')?.value;if(!term){$('#business-weeks').textContent='请先设置学期。';return;}
- try{
-  const rows=await request('/business-weeks?semester_id='+term);if(seq!==state.sequence)return;state.data.businessWeeks=rows;state.businessTerm=term;
-  $('#business-weeks').innerHTML=table(['业务','周次及日期','安排','操作'],rows.map((r,i)=>`<tr><td>${esc(r.business_name)}</td><td>第 ${r.week_no} 周<small>${esc(r.start_date)} ～ ${esc(r.end_date)}</small></td><td>${r.working?'正常上工':'本周停工'}<small>${esc(r.reason)}</small></td><td><button class="text-button" data-action="business-week" data-id="${i}">更正安排</button></td></tr>`),'暂无可管理的业务','普通管理员只可设置自己负责的开心花园、青广宣传。');
- }catch(e){if(seq===state.sequence)$('#business-weeks').textContent=e.message;}
-}
+// 业务管理页（含三级导航）在 business-navigation.js 中实现；本文件只保留业务相关的公共工具与其余页面。
 async function collectionsPage(){
  const seq=++state.sequence,admin=state.role!=='STUDENT';
  const buttons=admin?'<div class="button-row"><button class="btn" data-page="collection-management">管理范围</button><button class="btn primary" data-action="collection-create">发起征集</button></div>':'';
@@ -68,7 +48,7 @@ function businessAction(name,id,kind){
  if(name==='business-term'){state.businessTerm=$('#business-term').value;businessesPage();return true;}
  if(name==='business-manager'){
   const b=rowsOf(biz,'business_id',id);
-  openDialog('设置 '+b.name+' 管理员','该管理员可处理本业务考勤、请假和每周开工安排。',field('manager_admin_id','管理员',{options:[['','待分配'],...(state.data.admins||[]).filter(a=>a.role==='NORMAL'&&a.status==='ACTIVE').map(a=>[a.admin_id,a.name])],value:b.manager_admin_id||'',required:false,full:true}),v=>send(`/businesses/${id}/manager`,{manager_admin_id:v.manager_admin_id?Number(v.manager_admin_id):null},'PUT'));return true;
+  openDialog('设置业务负责人：'+b.name,'该负责人管本业务全部班次，'+(b.kind==='EVENT'?'包括之后新增的临时班次。':'之后新增的时段同样生效。'),field('manager_admin_id','业务负责人',{options:[['','待分配'],...(state.data.admins||[]).filter(a=>a.role==='NORMAL'&&a.status==='ACTIVE').map(a=>[a.admin_id,a.name])],value:b.manager_admin_id||'',required:false,full:true}),v=>send(`/businesses/${id}/manager`,{manager_admin_id:v.manager_admin_id?Number(v.manager_admin_id):null},'PUT'),'保存负责人');return true;
  }
  if(name==='business-week'){
   const r=state.data.businessWeeks[Number(id)];

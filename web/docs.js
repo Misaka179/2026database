@@ -34,8 +34,19 @@
     message: '提示信息', minutes: '服务时长（分钟）', credit_before: '原信用分',
     credit_after: '处理后信用分', date: '日期', id: '编号', type: '类型',
     loc: '字段位置', msg: '校验说明', input: '输入内容', ctx: '校验条件',
-    occupied: '已安排人数', remaining: '剩余名额', manager_name: '负责人姓名',
+    occupied: '已安排人数', remaining: '剩余名额', manager_name: '班次负责人姓名',
+    business_id: '业务编号', business_name: '业务名称', business_code: '业务代码', kind: '业务类型',
+    manager_scope: '负责人范围', business_ids: '业务范围编号', group_id: '小组编号',
+    group_name: '小组名称', group_ids: '小组范围编号', slot_ids: '时段编号', slots: '归属时段',
+    weekday: '星期（1—7）', semester_id: '学期编号', week_no: '周次', working: '本周是否上工',
+    effective_date: '生效日期', active: '是否加入', student_ids: '涉及队员', member_count: '成员数',
+    mappings: '工作表与去向映射', decisions: '重复行处理', commit: '是否正式导入',
+    request_hash: '幂等校验值', duplicate_choices: '重复行处理',
     student_name: '志愿者姓名', admin_name: '管理员姓名', total: '总数', items: '记录', slot_status: '班次状态',
+    total_manager_admin_id: '业务总负责人编号', total_manager_name: '业务总负责人姓名',
+    manager_admin_id: '业务负责人（旧字段，已停用）',
+    owner_admin_id: '总负责人编号', leaders: '分队负责人（按星期）', scope_id: '管理范围编号',
+    leader_scope: '管理范围表',
   };
   const enums = {
     admin: '管理员', student: '志愿者', STUDENT: '志愿者', SUPER: '超级管理员',
@@ -53,6 +64,19 @@
     service_slot: '服务班次表', service_record: '服务记录表', credit_rule: '信用规则表',
     credit_log: '信用流水表', leave_application: '请假申请表', transfer_application: '换班申请表',
     withdrawal_application: '退队申请表', operation_log: '操作日志表', violation: '违规表',
+    CREATE_BUSINESS: '新增业务', RENAME_BUSINESS: '业务改名', ARCHIVE_BUSINESS: '归档业务',
+    RESTORE_BUSINESS: '恢复业务', ADD_BUSINESS_SLOT: '添加固定时段',
+    ASSIGN_SLOT_MANAGERS: '按分队设置班次负责人', CONFIGURE_SLOT: '设置班次负责人与容量',
+    CONFIGURE_BUSINESS: '设置业务负责人', CREATE_GROUP: '新增小组', SET_GROUP_MEMBER: '调整小组成员',
+    CONFIGURE_BUSINESS_OWNER: '设置业务总负责人', APPOINT_LEADER: '设置分队负责人',
+    IMPORT_MEMBERS: '导入小组成员', PLAN_MEMBERSHIPS: '设置归属生效日期',
+    SET_BUSINESS_MEMBER: '调整专项业务归属', CREATE_EVENT: '录入临时服务',
+    RECOGNIZE_EVENT: '认定临时服务时长', SET_BUSINESS_WEEK: '更正每周开工安排',
+    CONFIRM_GARDEN: '确认花园本周服务', INCREASE_FIXED_HOURS: '上调固定时段时长',
+    FIXED: '固定班次业务', EVENT: '非固定业务', WEEKLY: '按周岗位',
+    BUSINESS: '业务负责人', SLOT: '班次负责人', NONE: '无需负责人',
+    business: '业务表', business_group: '小组表', group_member: '小组成员表',
+    slot_member: '班次归属表', business_member: '业务归属表',
   };
   const fallbackTitles = {
     'GET /health': '检查服务状态', 'POST /auth/login': '账号登录', 'GET /auth/me': '查询当前身份',
@@ -427,6 +451,12 @@
     if (path.includes('/transfer/{transfer_id}')) return '初审由负责原班次的普通管理员执行；终审由超级管理员执行。';
     if (path.includes('/withdrawal/{withdrawal_id}')) return '仅超级管理员可审批退队。';
     if (path === '/hours' || path === '/credit') return '志愿者可查询本人记录；超级管理员需指定学号。';
+    if (path.startsWith('/member-imports')) return '仅超级管理员或该业务负责人可执行；撤销限导入后 7 天内。';
+    if (/^\/slots\/\{slot_id\}\/members\/\{student_id\}$/.test(path) && method === 'DELETE') return '仅超级管理员或该业务负责人可执行；只移除该班次归属，不删除账号。';
+    if (path === '/businesses/{business_id}/owner') return '仅超级管理员可执行。';
+    if (path === '/businesses/{business_id}/leaders/{weekday}') return '仅超级管理员或该业务负责人可执行。';
+    if (path === '/business-groups/{group_id}/members/{student_id}') return '仅超级管理员或该业务负责人可执行；按生效日期收口，不追改历史。';
+    if (path === '/students/import') return '仅超级管理员或该业务负责人可执行；固定业务按班次或分类/时段列映射导入。';
     return '需先登录，服务端将根据当前角色和数据归属校验权限。';
   }
   function schemaDescription(schema) {

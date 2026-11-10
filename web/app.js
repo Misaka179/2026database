@@ -3,8 +3,8 @@ const $ = (s, root = document) => root.querySelector(s);
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const label = {ARCHIVED:'已归档',ACTIVE:'有效',DISABLED:'已停用',QUIT:'已退队',CANCELLED:'已取消',COMPLETED:'已完成',PENDING:'待处理',FIRST_APPROVED:'待终审',OPEN:'进行中',CLOSED:'已结束',APPROVED:'已通过',REJECTED:'已驳回',NORMAL:'正常出勤',LATE:'迟到',ABSENT:'缺勤',LEAVE:'请假',VALID:'有效',VOID:'已作废',RETIRED:'历史版本',SUPER:'超级管理员',STUDENT:'志愿者'};
 const roleName = r => ({SUPER:'超级管理员',NORMAL:'普通管理员',STUDENT:'志愿者',LEAD:'分队／美育负责人'}[r] || '用户');
-const operationNames = {INCREASE_FIXED_HOURS:'时段管理员上调时长',APPOINT_LEADER:'任命范围负责人',WITHDRAWAL_FIRST:'退队初审',PROMOTE_STUDENT:"将队员设为普通管理员",CORRECT_ATTENDANCE:"考勤改判与信用冲正",SET_STUDENT_CREDIT:"超级管理员调整信用分",SAVE_SEMESTER:'设置学期',SET_CALENDAR:'设置停工或调休',SYNC_SEMESTER:'核对学期排班',AUTO_WEEKLY_SETTLEMENT:'系统按周结算',IMPORT_ROSTER:'导入队员名单',CONFIGURE_SLOT:'设置时段负责人和容量',SET_MEMBERSHIPS:'设置队员归属',CREATE_STUDENT:'新增志愿者',CREATE_ADMIN:'新增管理员',CREATE_SLOT:'新增服务班次',CREATE_SCHEDULE:'建立排班',CANCEL_SCHEDULE:'取消排班',APPROVE_LEAVE:'审批请假',TRANSFER_FIRST:'换班初审',TRANSFER_FINAL:'换班终审',APPROVE_WITHDRAWAL:'确认退队',RECORD_ATTENDANCE:'登记考勤',REVISE_HOURS:'修正服务时长',SET_CREDIT_RULE:'修改信用规则'};
-const fieldNames = {slots:'归属时段',refunded_score:'退还的实际扣分',revision:'考勤版本',credit_version:'信用版本',student_id:'学号',admin_id:'管理员编号',slot_id:'班次编号',schedule_id:'排班编号',attendance_id:'考勤编号',leave_id:'请假编号',transfer_id:'换班编号',withdrawal_id:'退队编号',record_id:'服务记录编号',rule_id:'规则编号',credit_log_id:'流水编号',name:'姓名',college:'学院',phone:'联系电话',credit_score:'信用分',status:'状态',reason:'原因',team_name:'分队名称',period_no:'时段编号',start_time:'开始时间',end_time:'结束时间',schedule_date:'服务日期',create_time:'创建时间',service_minutes:'服务分钟数',minutes:'服务分钟数',credit_before:'变化前信用分',credit_after:'变化后信用分',cancelled_schedules:'取消的排班',account:'登录账号',role:'角色',version:'规则版本',deduct_score:'规则扣分',record_status:'记录状态',attendance_status:'考勤状态',new_schedule_id:'新排班编号',student_status:'志愿者状态',date:'日期',apply_time:'申请时间',approve_admin_id:'审批管理员',approve_status:'审批状态',approve_time:'审批时间',old_schedule_id:'原排班编号',new_slot_id:'目标班次编号',new_date:'目标日期',first_admin_id:'初审管理员',first_status:'初审状态',first_time:'初审时间',final_admin_id:'终审管理员',final_status:'终审状态',final_time:'终审时间',active_marker:'有效标记',manager_admin_id:'负责人编号',need_num:'人数上限',service_date:'服务日期',violation_type:'违规类型',create_admin_id:'创建管理员',location:'地点'};
+const operationNames = {INCREASE_FIXED_HOURS:'时段管理员上调时长',APPOINT_LEADER:'任命范围负责人',WITHDRAWAL_FIRST:'退队初审',PROMOTE_STUDENT:"将队员设为普通管理员",CORRECT_ATTENDANCE:"考勤改判与信用冲正",SET_STUDENT_CREDIT:"超级管理员调整信用分",SAVE_SEMESTER:'设置学期',SET_CALENDAR:'设置停工或调休',SYNC_SEMESTER:'核对学期排班',AUTO_WEEKLY_SETTLEMENT:'系统按周结算',IMPORT_ROSTER:'导入队员名单',CONFIGURE_SLOT:'设置班次负责人和容量',SET_MEMBERSHIPS:'设置队员归属',REMOVE_SLOT_MEMBER:'移出班次队员',SET_GROUP_MEMBER:'调整小组成员',CREATE_STUDENT:'新增志愿者',CREATE_ADMIN:'新增管理员',CREATE_SLOT:'新增服务班次',CREATE_SCHEDULE:'建立排班',CANCEL_SCHEDULE:'取消排班',APPROVE_LEAVE:'审批请假',TRANSFER_FIRST:'换班初审',TRANSFER_FINAL:'换班终审',APPROVE_WITHDRAWAL:'确认退队',RECORD_ATTENDANCE:'登记考勤',REVISE_HOURS:'修正服务时长',SET_CREDIT_RULE:'修改信用规则'};
+const fieldNames = {slots:'归属时段',refunded_score:'退还的实际扣分',revision:'考勤版本',credit_version:'信用版本',student_id:'学号',admin_id:'管理员编号',slot_id:'班次编号',schedule_id:'排班编号',attendance_id:'考勤编号',leave_id:'请假编号',transfer_id:'换班编号',withdrawal_id:'退队编号',record_id:'服务记录编号',rule_id:'规则编号',credit_log_id:'流水编号',name:'姓名',college:'学院',phone:'联系电话',credit_score:'信用分',status:'状态',reason:'原因',team_name:'分队名称',period_no:'时段编号',start_time:'开始时间',end_time:'结束时间',schedule_date:'服务日期',create_time:'创建时间',service_minutes:'服务分钟数',minutes:'服务分钟数',credit_before:'变化前信用分',credit_after:'变化后信用分',cancelled_schedules:'取消的排班',account:'登录账号',role:'角色',version:'规则版本',deduct_score:'规则扣分',record_status:'记录状态',attendance_status:'考勤状态',new_schedule_id:'新排班编号',student_status:'志愿者状态',date:'日期',apply_time:'申请时间',approve_admin_id:'审批管理员',approve_status:'审批状态',approve_time:'审批时间',old_schedule_id:'原排班编号',new_slot_id:'目标班次编号',new_date:'目标日期',first_admin_id:'初审管理员',first_status:'初审状态',first_time:'初审时间',final_admin_id:'终审管理员',final_status:'终审状态',final_time:'终审时间',active_marker:'有效标记',manager_admin_id:'班次负责人编号',need_num:'人数上限',service_date:'服务日期',violation_type:'违规类型',create_admin_id:'创建管理员',location:'地点'};
 const app = $('#app');
 const dialog = $('#action-dialog');
 const state = {token:sessionStorage.getItem('volunteer_token'),me:null,role:null,page:'overview',tab:'',data:{},search:'',status:'',week:'current',selectedStudent:'',from:'',to:'',sequence:0,refreshSequence:0,sessionVersion:0,loading:false,refreshError:''};
@@ -28,8 +28,7 @@ const nav = [
   ['credit','信用管理',['SUPER','STUDENT']],
   // === 队员与业务 ===
   ['basics','队员资料',['SUPER']],
-  ['businesses','业务管理',['SUPER','NORMAL']], // 包含班次和小组查看
-  ['leaders','分队负责人',['SUPER']],
+  ['businesses','业务管理',['SUPER','NORMAL']], // 包含班次、分队负责人和小组
   ['collection-management','征集权限配置',['SUPER','NORMAL']],
   ['members','本时段队员',['NORMAL']],
   // === 操作日志（独立）===
@@ -53,7 +52,7 @@ async function request(path,options={}) {
   const token=state.token;const sessionVersion=state.sessionVersion;
   const headers = {'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})};
   let response;
-  try {response=await fetch(path,{...options,headers:{...headers,...options.headers},signal:AbortSignal.timeout((['/students/import','/member-imports'].includes(path)||path.endsWith('/approve-batch'))?300000:15000)});}
+  try {response=await fetch(path,{...options,headers:{...headers,...options.headers},signal:AbortSignal.timeout((['/students/import','/member-imports'].includes(path)||path.endsWith('/approve-batch')||path.includes('/revert'))?300000:15000)});}
   catch {throw new Error('连接暂时中断，请检查本机服务后重试。');}
   const data=await response.json().catch(()=>({detail:'服务器未返回有效结果，请稍后重试。'}));
   if(!response.ok){
@@ -98,7 +97,7 @@ async function refresh(){
 }
 function navigate(page){closeDialog(true);if(state.role==='LEAD'&&!['overview','inbox','lead-workspace'].includes(page)){state.leadTab=page==='hours'?'hours':page==='applications'?'withdrawal':'schedules';page='lead-workspace';}if(state.page!==page){state.inboxSelected=new Set();state.collectionSelections=new Map();}state.page=page;state.tab='';state.search='';state.status='';state.sequence++;document.querySelector('.workspace')?.classList.remove('menu-open');scrollToTop();updateNavigation();renderPage();}
 function scrollToTop(){const body=document.querySelector('.workspace-body');if(body)body.scrollTo({top:0});window.scrollTo({top:0});}
-function heading(title,text,button=''){return `<div class="page-heading"><div><h1>${esc(title)}</h1></div>${button?`<div class="page-actions">${button}</div>`:''}</div>`;}
+function heading(title,text,button='',variant=''){return `<div class="page-heading${variant?' '+variant:''}"><div><h1>${esc(title)}</h1></div>${button?`<div class="page-actions">${button}</div>`:''}</div>`;}
 function canFuture(r){return r.status==='ACTIVE'&&new Date(`${r.schedule_date}T${r.start_time}:00+08:00`)>new Date();}
 function isEnded(r){if(r.schedule_kind==='WEEKLY'){const day=new Date(`${r.schedule_date}T00:00:00+08:00`);day.setUTCDate(day.getUTCDate()-6);return day<=new Date();}return new Date(`${r.schedule_date}T${r.end_time}:00+08:00`)<=new Date();}
 function actionable(a,kind){if(kind==='transfer'&&!a.old_slot_id)return false;if(kind==='leave')return state.role==='NORMAL'&&a.approve_status==='PENDING';if(kind==='withdrawal')return state.role==='SUPER'&&a.approve_status==='PENDING'&&!a.requires_first;return state.role==='NORMAL'&&a.first_status==='PENDING'&&a.final_status==='PENDING'||state.role==='SUPER'&&a.first_status==='APPROVED'&&a.final_status==='PENDING';}
@@ -185,7 +184,7 @@ async function creditPage(){
  $('#credit-result').innerHTML=queriedStudentLabel()+`<div class="summary-line"><strong>${data.credit_score}</strong><span>当前信用分</span>${state.role==='SUPER'?'<button class="btn primary" data-action="credit-set">调整信用分</button>':''}${badge(data.status,data.status==='ACTIVE'?'正常参与服务':label[data.status])}</div>${table(['发生时间','变更类型与原因','变化前','实际变动','变化后'],data.logs.map(r=>`<tr><td>${fmtDate(r.change_time)}</td><td class="wrap">${esc(({DEDUCTION:'考勤扣分',REVERSAL:'考勤冲正',MANUAL_SET:'超管调分'})[r.entry_type]||'信用变更')}<small>${esc(label[r.change_reason]||r.change_reason)}</small></td><td>${r.before_score} 分</td><td><strong>${r.change_score>0?'+':''}${r.change_score} 分</strong></td><td>${r.after_score} 分</td></tr>`),'暂无信用变动','当前没有扣分流水。信用分变化后，可在这里逐笔核对。')}</div>`;
  }catch(e){if(seq===state.sequence)$('#credit-result').innerHTML=`<p class="notice error">${esc(e.message)}</p>`;}
 }
-function slotTable(){if(state.data.slots.some(s=>s.weekday))return fixedSlotTable();return table(['服务班次','服务时间','地点','人数上限','标准时长','负责人'],state.data.slots.map(r=>`<tr><td><strong>${esc(r.team_name)}</strong><small>第 ${r.period_no} 时段 ${r.status==='DISABLED'?'（已停用）':''}</small></td><td>${esc(r.start_time)} 至 ${esc(r.end_time)}</td><td>${esc(r.location)}</td><td>${r.need_num} 人</td><td>${hourText(r.service_minutes)}</td><td>${esc(adminName(r.manager_admin_id))}</td></tr>`),'暂无服务班次','由超级管理员添加班次和负责人后显示。');}
+function slotTable(){if(state.data.slots.some(s=>s.weekday))return fixedSlotTable();return table(['服务班次','服务时间','地点','人数上限','标准时长','班次负责人'],state.data.slots.map(r=>`<tr><td><strong>${esc(r.team_name)}</strong><small>第 ${r.period_no} 时段 ${r.status==='DISABLED'?'（已停用）':''}</small></td><td>${esc(r.start_time)} 至 ${esc(r.end_time)}</td><td>${esc(r.location)}</td><td>${r.need_num} 人</td><td>${hourText(r.service_minutes)}</td><td>${esc(adminName(r.manager_admin_id))}</td></tr>`),'暂无服务班次','由超级管理员添加班次和负责人后显示。');}
 async function logsPage(){const seq=++state.sequence;$('#main').innerHTML=heading('操作日志','查看最近 100 条重要操作，核对修改前后的内容。','<button class="btn" data-action="refresh">刷新日志</button>')+'<section class="panel" id="logs-result"><div class="loading" role="status">正在读取操作日志…</div></section>';try{const rows=await request('/operation-logs');if(seq!==state.sequence)return;state.data.logs=rows;$('#logs-result').innerHTML=table(['操作时间','操作人员','操作内容','说明','操作'],rows.map(r=>`<tr><td>${fmtDate(r.operation_time)}</td><td>${esc(adminName(r.admin_id))}</td><td>${esc(operationNames[r.operation_type]||'数据操作')}</td><td class="wrap">${esc(r.reason||'未附加说明')}</td><td><button class="text-button" data-action="log-detail" data-id="${r.log_id}">查看详情</button></td></tr>`),'暂无操作日志','新增资料、审批和考勤等重要操作会自动留存记录。');}catch(e){if(seq===state.sequence)$('#logs-result').innerHTML=`<p class="notice error">${esc(e.message)}</p>`;}}
 
 // All destructive or consequential business actions go through a named dialog.
@@ -228,12 +227,12 @@ function changePasswordDialog(){
   }, '保存新密码');
 }
 function scheduleOptions(){return state.data.schedules.filter(canFuture).map(r=>[r.schedule_id,`${r.schedule_date} ${slotName(r.slot_id)}`]);}
-function action(name,id,kind){
+function action(name,id,kind,studentId){
  if(name==='menu-close'){document.querySelector('.workspace')?.classList.remove('menu-open');return;}
  if(name==='sidebar-toggle'){const w=document.querySelector('.workspace');w?.classList.toggle('sidebar-collapsed');try{localStorage.setItem('volunteer_sidebar_collapsed',w?.classList.contains('sidebar-collapsed')?'1':'0');}catch{}return;}
  if(modalBusy)return;
  if(name==='change-password')return changePasswordDialog();
- if(leaderAction(name,id)||directoryAction(name,id)||governanceAction(name,id,kind)||businessAction(name,id,kind)||semesterAction(name,id)||rosterAction(name,id))return;
+ if(leaderAction(name,id)||directoryAction(name,id,kind)||governanceAction(name,id,kind)||businessAction(name,id,kind,studentId)||semesterAction(name,id)||rosterAction(name,id))return;
  const r=rowsOf(state.data.schedules,'schedule_id',id);
  if(name==='transfer')return rosterAction('fixed-transfer');
  if(name==='new-application')return action((state.tab||'leave')==='transfer'?'transfer':'leave');
@@ -284,6 +283,7 @@ document.addEventListener('click',async e=>{
   if(input){const show=input.type==='password';input.type=show?'text':'password';reveal.setAttribute('aria-label',show?'隐藏密码':'显示密码');const label=reveal.querySelector('span');if(label)label.textContent=show?'隐藏':'显示';}
   return;
  }
+ const inSummary=e.target.closest('summary');if(inSummary&&e.target.closest('[data-action]')&&typeof e.preventDefault==='function')e.preventDefault();
  const target=e.target.closest('button,[data-page]');if(!target)return;
  if(target.dataset.page){navigate(target.dataset.page);return;}
  if(target.dataset.tab){closeDialog(true);state.tab=target.dataset.tab;renderPage();return;}
@@ -311,7 +311,7 @@ document.addEventListener('click',async e=>{
  if(name==='refresh')return refresh();
  if(name==='query-student-pick'&&state.role==='SUPER'){const student=rowsOf(state.data.students,'student_id',target.dataset.id);if(!student)return;state.selectedStudent=student.student_id;state.studentQuery=student.student_id;return renderPage();}
  if(name==='search'){state.search=$('#search').value.trim();state.status=$('#status-filter').value;state.week=$('#week-filter')?.value||'current';return schedulesPage();}
- try{action(name,target.dataset.id,target.dataset.kind);}catch(e){console.error('[ERROR] action failed:',name,e);notify('操作失败：' + e.message,true);}
+ try{action(name,target.dataset.id,target.dataset.kind,target.dataset.student);}catch(e){console.error('[ERROR] action failed:',name,e);notify('操作失败：' + e.message,true);}
 });
 dialog.addEventListener('cancel',e=>{e.preventDefault();if(!modalBusy)closeDialog();});
 document.addEventListener('submit',async e=>{
@@ -348,7 +348,7 @@ async function start(){
 
 document.addEventListener('change',e=>{if(e.target.id==='business-filter'){state.businessId=e.target.value;hoursPage();}});
 
-Object.assign(operationNames,{CREATE_BUSINESS:'新增业务',RENAME_BUSINESS:'修改业务名称',ARCHIVE_BUSINESS:'停用归档业务',RESTORE_BUSINESS:'恢复业务',ADD_BUSINESS_SLOT:'新增业务时段',SET_GROUP_MEMBER:'调整小组归属',IMPORT_MEMBERS:'导入业务小组名单',SET_COLLECTION_MANAGERS:'设置征集管理范围',REQUEST_COLLECTION_SCOPE:'申请征集管理范围',DECIDE_COLLECTION_SCOPE:'审批征集管理范围',REVIEW_HOURS_FIRST:'时长申报初审',REVIEW_HOURS_FINAL:'时长申报终审',CORRECT_HOURS_REVIEW:'二次更正时长审批',CLOSE_COLLECTION:'结束时长征集',RESET_PASSWORD:'重置账号密码',CONFIGURE_BUSINESS:'设置业务管理员',SET_BUSINESS_WEEK:'更正每周开工安排',CONFIRM_GARDEN:'确认花园本周服务',CREATE_COLLECTION:'发布时长征集',DECIDE_HOURS:'审批时长申报',IMPORT_SPECIALTY:'导入专项名单及时长',CREATE_EVENT:'录入临时服务',RECOGNIZE_EVENT:'认定临时服务时长',PLAN_MEMBERSHIPS:'设置归属生效日期',SET_BUSINESS_MEMBER:'调整专项业务归属'});
+Object.assign(operationNames,{CREATE_BUSINESS:'新增业务',CREATE_GROUP:'新增小组',ASSIGN_SLOT_MANAGERS:'按分队设置班次负责人',RENAME_BUSINESS:'修改业务名称',ARCHIVE_BUSINESS:'停用归档业务',RESTORE_BUSINESS:'恢复业务',ADD_BUSINESS_SLOT:'新增业务时段',SET_GROUP_MEMBER:'调整小组归属',IMPORT_MEMBERS:'导入业务小组名单',SET_COLLECTION_MANAGERS:'设置征集管理范围',REQUEST_COLLECTION_SCOPE:'申请征集管理范围',DECIDE_COLLECTION_SCOPE:'审批征集管理范围',REVIEW_HOURS_FIRST:'时长申报初审',REVIEW_HOURS_FINAL:'时长申报终审',CORRECT_HOURS_REVIEW:'二次更正时长审批',CLOSE_COLLECTION:'结束时长征集',RESET_PASSWORD:'重置账号密码',CONFIGURE_BUSINESS:'设置业务管理员',SET_BUSINESS_WEEK:'更正每周开工安排',CONFIRM_GARDEN:'确认花园本周服务',CREATE_COLLECTION:'发布时长征集',DECIDE_HOURS:'审批时长申报',IMPORT_SPECIALTY:'导入专项名单及时长',CREATE_EVENT:'录入临时服务',RECOGNIZE_EVENT:'认定临时服务时长',PLAN_MEMBERSHIPS:'设置归属生效日期',SET_BUSINESS_MEMBER:'调整专项业务归属'});
 Object.assign(fieldNames,{group_id:'小组编号',group_ids:'小组范围编号',group_name:'小组名称',new_students:'新建账号数',kind:'业务类型',business_ids:'业务范围编号',submission_deadline:'申报截止日期',attachments:'附件信息',business_id:'业务编号',business_name:'业务名称',week_no:'周次',working:'是否上工',effective_date:'生效日期',student_ids:'参与队员',items:'工作事项',imported:'导入条数',skipped:'跳过条数',batch_id:'导入批次',duplicate_choices:'重复行处理',active:'是否加入'});
 
 /* ============================================================================
@@ -518,7 +518,6 @@ function buildShell() {
         <span><strong>图书馆志愿服务</strong><small>管理工作台</small></span>
       </a>
       <button class="sidebar-collapse-btn" type="button" data-action="sidebar-toggle" aria-label="折叠或展开导航">${uiIcon('chevron-right')}</button>
-      <div class="nav-label">日常工作</div>
       <nav class="nav-list">${navigationHtml(available)}</nav>
     </aside>
     <button class="sidebar-backdrop" type="button" data-action="menu-close" aria-label="关闭导航菜单"></button>

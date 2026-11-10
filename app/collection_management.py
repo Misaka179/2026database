@@ -14,6 +14,8 @@ class CollectionManagement(DirectoryManagement):
     def _collection_scope(self,c,a,business_id,group_id=None):
         from .service import require
         if a['_role']=='SUPER':return
+        owner=one(c,'SELECT total_manager_admin_id FROM business WHERE business_id=%s',(business_id,))
+        if owner and owner['total_manager_admin_id']==a['_id']:return
         require(a['_role']=='NORMAL' and (one(c,'SELECT 1 FROM collection_manager WHERE admin_id=%s AND business_id=%s',(a['_id'],business_id)) or group_id is not None and one(c,'SELECT 1 FROM collection_group_manager m JOIN business_group g ON g.group_id=m.group_id WHERE m.admin_id=%s AND m.group_id=%s AND g.business_id=%s',(a['_id'],group_id,business_id))),
                 '没有该业务的时长征集管理权限',403)
 
@@ -42,7 +44,7 @@ class CollectionManagement(DirectoryManagement):
         from .service import require,reason_text
         reason=reason_text(reason);ids=sorted(set(business_ids))
         with self.db.transaction(True) as c:
-            a=self.actor(c,actor,('SUPER',))
+            a=self.actor(c,actor,('SUPER','NORMAL'))
             manager=one(c,"SELECT * FROM admin WHERE admin_id=%s AND role='NORMAL' AND status='ACTIVE'",(admin_id,))
             require(manager,'请选择有效普通管理员',422)
             self.actor(c,{'kind':'admin','id':admin_id},('NORMAL',))
@@ -52,6 +54,12 @@ class CollectionManagement(DirectoryManagement):
             for gid in gids:
                 g=one(c,'SELECT * FROM business_group WHERE group_id=%s',(gid,));require(g,'小组不存在',422);self._collection_business(c,g['business_id'])
             previous=[r['business_id'] for r in all_rows(c,'SELECT business_id FROM collection_manager WHERE admin_id=%s ORDER BY business_id',(admin_id,))]
+            if a['_role']=='NORMAL':
+                owned={b['business_id'] for b in all_rows(c,'SELECT business_id FROM business WHERE total_manager_admin_id=%s',(a['_id'],))}
+                # 业务负责人只能改动自己业务内的授权，其他业务沿用管理员原有范围
+                for bid in ids:require(bid in owned or bid in previous,'只能配置本人负责业务的征集权限',403)
+                for gid in gids:
+                    g=one(c,'SELECT business_id FROM business_group WHERE group_id=%s',(gid,));require(g and g['business_id'] in owned or gid in previous_groups,'只能配置本人负责业务的征集权限',403)
             if ids==previous and gids==previous_groups:return {'replayed':True,'business_ids':ids,'group_ids':gids}
             c.execute('DELETE FROM collection_manager WHERE admin_id=%s',(admin_id,))
             for bid in ids:c.execute('INSERT INTO collection_manager VALUES(%s,%s,%s,%s)',(admin_id,bid,a['_id'],self.clock()))

@@ -50,10 +50,12 @@ class LeaderTests(unittest.TestCase):
         self.assertEqual(self.s.leader_workspace(self.lead)['slots'],[])
         with self.assertRaises(DomainError):self.s.configure_slot(self.lead,self.mon,None,20)
 
-    def test_art_whole_week_and_single_team_validation(self):
-        self.s.appoint_leader(self.super,8,'leader-other','美育任命')
-        art=self.s.login('admin','lead-leader-other','LeadPassword123!')
-        slots=self.s.leader_workspace(art)['slots']
+    def test_art_weekday_scopes_and_single_team_validation(self):
+        art=[b for b in self.s.businesses(self.super) if b['code']=='ART'][0]['business_id']
+        for day in range(1,8):
+            self.s.appoint_business_leader(self.super,art,day,'leader-other','美育任命')
+        art_lead=self.s.login('admin','lead-leader-other','LeadPassword123!')
+        slots=self.s.leader_workspace(art_lead)['slots']
         self.assertEqual(len(slots),28)
         self.assertEqual({r['weekday'] for r in slots},set(range(1,8)))
         with self.assertRaises(DomainError):self.s.set_memberships(self.super,self.student['id'],[self.mon,self.tue])
@@ -63,6 +65,49 @@ class LeaderTests(unittest.TestCase):
         self.s.reset_password(self.super,'student','leader-person','UpdatedPassword123!','修改密码')
         self.assertEqual(self.s.login('admin','lead-leader-person','UpdatedPassword123!'),self.lead)
         self.assertEqual(self.s.login('admin','leader-person','UpdatedPassword123!')['id'],ordinary['admin_id'])
+
+    def test_business_owner_independent_from_team_and_slot_managers(self):
+        consult=[b for b in self.s.businesses(self.super) if b['code']=='CONSULT'][0]['business_id']
+        managed=self.rows('SELECT manager_admin_id FROM service_slot WHERE slot_id=%s',(self.mon,))[0]['manager_admin_id']
+        name=self.rows('SELECT name FROM admin WHERE admin_id=%s',(self.normal['id'],))[0]['name']
+        self.s.configure_business_owner(self.super,consult,self.normal['id'],'设总负责人')
+        self.assertEqual(self.rows('SELECT manager_admin_id FROM service_slot WHERE slot_id=%s',(self.mon,))[0]['manager_admin_id'],managed)
+        listing=[b for b in self.s.businesses(self.super) if b['business_id']==consult][0]
+        self.assertEqual(listing['total_manager_admin_id'],self.normal['id'])
+        self.assertEqual(listing['total_manager_name'],name)
+        self.assertEqual([r['weekday'] for r in listing['leaders']],list(range(1,8)))
+        # 分队负责人独立于总负责人，也独立于时段负责人
+        self.s.appoint_business_leader(self.super,consult,1,'leader-person','一分队负责人')
+        listing=[b for b in self.s.businesses(self.super) if b['business_id']==consult][0]
+        self.assertEqual(listing['total_manager_admin_id'],self.normal['id'])
+        lead_admin=self.rows('SELECT admin_id FROM admin WHERE leader_student_id=%s',('leader-person',))[0]['admin_id']
+        self.assertEqual(listing['leaders'][0]['admin_id'],lead_admin)
+        self.assertEqual(self.rows('SELECT manager_admin_id FROM service_slot WHERE slot_id=%s',(self.mon,))[0]['manager_admin_id'],managed)
+
+    def test_business_owner_business_wide_rights(self):
+        consult=[b for b in self.s.businesses(self.super) if b['code']=='CONSULT'][0]['business_id']
+        art=[b for b in self.s.businesses(self.super) if b['code']=='ART'][0]['business_id']
+        self.s.configure_business_owner(self.super,consult,self.normal['id'],'设业务负责人')
+        consult_row=[b for b in self.s.businesses(self.normal) if b['business_id']==consult][0]
+        self.assertTrue(consult_row['can_manage'])
+        self.assertIn(self.student['id'],{r['student_id'] for r in self.s.students(self.normal)})
+        # 能改本业务任意时段的容量，且不覆盖该时段负责人
+        managed=self.rows('SELECT manager_admin_id FROM service_slot WHERE slot_id=%s',(self.tue,))[0]['manager_admin_id']
+        self.s.configure_slot(self.normal,self.tue,managed,18)
+        self.assertEqual(self.rows('SELECT need_num FROM service_slot WHERE slot_id=%s',(self.tue,))[0]['need_num'],18)
+        self.assertEqual(self.rows('SELECT manager_admin_id FROM service_slot WHERE slot_id=%s',(self.tue,))[0]['manager_admin_id'],managed)
+        # 业务负责人能看到本业务候选管理员（供设置时段负责人/小组征集负责人选择）
+        self.assertIn(self.normal['id'],{a['admin_id'] for a in self.s.business_admins(self.normal,consult)})
+        # 业务内人事权：可任命本业务分队负责人
+        self.s.appoint_business_leader(self.normal,consult,2,'leader-other','二分队负责人')
+        self.assertEqual(self.rows('SELECT admin_id FROM leader_scope WHERE business_id=%s AND weekday=2 AND active=1',(consult,))[0]['admin_id'],
+                         self.rows('SELECT admin_id FROM admin WHERE leader_student_id=%s',('leader-other',))[0]['admin_id'])
+        # 越界与自封都被拒
+        with self.assertRaises(DomainError):self.s.appoint_business_leader(self.normal,art,2,'leader-other','越权任命')
+        with self.assertRaises(DomainError):self.s.configure_business_owner(self.normal,consult,self.normal['id'],'自封')
+        self.s.configure_business_owner(self.super,consult,None,'撤销业务负责人')
+        with self.assertRaises(DomainError) as e:self.s.configure_slot(self.normal,self.tue,managed,20)
+        self.assertEqual(e.exception.status,403)
 
     def test_withdrawal_initial_final_and_no_leader_fallback(self):
         self.term()

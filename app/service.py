@@ -3,6 +3,7 @@
 Only this layer performs business mutations; API callers cannot supply their role.
 Dates/times are Asia/Shanghai. The clock is injectable for deterministic tests.
 """
+import hashlib
 import json
 from datetime import date, datetime, time, timedelta, timezone
 from .db import Database, one, all_rows
@@ -18,6 +19,38 @@ class DomainError(Exception):
     def __init__(self, message, status=409):
         self.message, self.status = message, status
         super().__init__(message)
+
+
+def business_owner_available(c):
+    """旧库可能还没有 business.total_manager_admin_id（或整张 business 表），此时退回按时段负责人鉴权。"""
+    try:
+        return bool(one(c, "SELECT 1 FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='business' AND column_name='total_manager_admin_id'"))
+    except Exception:
+        return False
+
+
+def business_link_available(c):
+    """service_slot.business_id 是业务化改造后的列，旧库没有。"""
+    try:
+        return bool(one(c, "SELECT 1 FROM information_schema.COLUMNS WHERE table_schema=DATABASE() AND table_name='service_slot' AND column_name='business_id'"))
+    except Exception:
+        return False
+
+
+def owner_of_business(c, business_id):
+    """业务负责人：business.total_manager_admin_id 是唯一口径，独立于时段与分队负责人。"""
+    if business_id is None or not business_owner_available(c):
+        return None
+    row = one(c, 'SELECT total_manager_admin_id FROM business WHERE business_id=%s', (business_id,))
+    return row['total_manager_admin_id'] if row else None
+
+
+def require_business_owner(c, a, business_id, message='只能管理本人负责的业务'):
+    """超管放行；普通管理员须是业务 total_manager_admin_id。"""
+    if a['_role'] == 'SUPER':
+        return
+    owner = owner_of_business(c, business_id)
+    require(a['_role'] == 'NORMAL' and owner is not None and owner == a['_id'], message, 403)
 
 
 def require(condition, message, status=409):
@@ -273,7 +306,9 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
         if a['_role']=='SUPER':
             return
         if a['_role']=='NORMAL':
-            require(row['manager_admin_id']==a['_id'], '不能操作其他管理员负责的班次',403)
+            owner=row.get('business_owner_admin_id', row.get('total_manager_admin_id'))
+            require(row['manager_admin_id']==a['_id'] or owner is not None and owner==a['_id'],
+                    '不能操作其他管理员负责的班次',403)
         else:
             require(row['student_id']==a['_id'], '只能操作本人数据',403)
 
@@ -519,17 +554,25 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
     def _legacy_list_schedules(self, actor):
         with self.db.transaction() as c:
             a=self.actor(c,actor)
-            sql='''SELECT s.*,st.name AS student_name,t.team_name,t.period_no,t.start_time,t.end_time,t.location,
-                t.manager_admin_id,at.attendance_status,at.source AS attendance_source,at.revision AS attendance_revision,
+            owner_ok=business_owner_available(c) and business_link_available(c)
+            owner_col=',b.total_manager_admin_id AS business_owner_admin_id' if owner_ok else ''
+            bid_col=',t.business_id' if business_link_available(c) else ''
+            owner_join=' LEFT JOIN business b ON b.business_id=t.business_id' if owner_ok else ''
+            sql=f'''SELECT s.*,st.name AS student_name,t.team_name,t.period_no,t.start_time,t.end_time,t.location,
+                t.manager_admin_id{bid_col}{owner_col},
+                at.attendance_status,at.source AS attendance_source,at.revision AS attendance_revision,
                 EXISTS(SELECT 1 FROM leave_application l WHERE l.schedule_id=s.schedule_id AND l.approve_status='APPROVED') AS leave_approved
                 FROM schedule s JOIN service_slot t ON s.slot_id=t.slot_id
-                JOIN student st ON st.student_id=s.student_id
+                JOIN student st ON st.student_id=s.student_id{owner_join}
                 LEFT JOIN attendance at ON at.schedule_id=s.schedule_id'''
             args=()
             if a['_role']=='STUDENT':
                 sql+=' WHERE s.student_id=%s'; args=(a['_id'],)
             elif a['_role']=='NORMAL':
-                sql+=' WHERE t.manager_admin_id=%s'; args=(a['_id'],)
+                if owner_ok:
+                    sql+=' WHERE (t.manager_admin_id=%s OR b.total_manager_admin_id=%s)'; args=(a['_id'],a['_id'])
+                else:
+                    sql+=' WHERE t.manager_admin_id=%s'; args=(a['_id'],)
             return all_rows(c,sql+' ORDER BY s.schedule_date,s.schedule_id',args)
 
     def _legacy_hours(self, actor, student_id=None, start=None, end=None):
@@ -568,11 +611,14 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
             elif a['_role']=='NORMAL':
                 require(schedule_key,'普通管理员不能查看退队申请',403)
                 from .fixed_slots import installed
+                owner_ok=business_owner_available(c) and business_link_available(c)
+                owner_join=' LEFT JOIN business b ON b.business_id=t.business_id' if owner_ok else ''
+                owner_cond=' OR b.total_manager_admin_id=%s' if owner_ok else ''
                 if kind=='transfer' and installed(c):
-                    sql+=' LEFT JOIN schedule s ON p.old_schedule_id=s.schedule_id JOIN service_slot t ON t.slot_id=COALESCE(p.old_slot_id,s.slot_id) WHERE t.manager_admin_id=%s'
+                    sql+=f' LEFT JOIN schedule s ON p.old_schedule_id=s.schedule_id JOIN service_slot t ON t.slot_id=COALESCE(p.old_slot_id,s.slot_id){owner_join} WHERE (t.manager_admin_id=%s{owner_cond})'
                 else:
-                    sql+=f' JOIN schedule s ON p.{schedule_key}=s.schedule_id JOIN service_slot t ON s.slot_id=t.slot_id WHERE t.manager_admin_id=%s'
-                args=(a['_id'],)
+                    sql+=f' JOIN schedule s ON p.{schedule_key}=s.schedule_id JOIN service_slot t ON s.slot_id=t.slot_id{owner_join} WHERE (t.manager_admin_id=%s{owner_cond})'
+                args=(a['_id'],a['_id']) if owner_ok else (a['_id'],)
             rows=all_rows(c,sql+f' ORDER BY p.{key} DESC',args)
             if kind=='withdrawal':
                 from .leaders import installed as leaders_installed
@@ -624,27 +670,35 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
             args=[]
             if a['_role']=='NORMAL':
                 require(fixed,'该管理员尚未配置固定时段',403)
-                sql+=" AND EXISTS(SELECT 1 FROM slot_member m JOIN service_slot t ON m.slot_id=t.slot_id WHERE m.student_id=st.student_id AND t.manager_admin_id=%s)"
-                args.append(a['_id'])
+                owner_ok=business_owner_available(c) and business_link_available(c)
+                owner_join=' LEFT JOIN business b ON b.business_id=t.business_id' if owner_ok else ''
+                owner_cond=' OR b.total_manager_admin_id=%s' if owner_ok else ''
+                sql+=f" AND EXISTS(SELECT 1 FROM slot_member m JOIN service_slot t ON m.slot_id=t.slot_id{owner_join} WHERE m.student_id=st.student_id AND (t.manager_admin_id=%s{owner_cond}))"
+                args.extend([a['_id'],a['_id']] if owner_ok else [a['_id']])
             if student_id:
                 sql+=' AND st.student_id=%s';args.append(student_id)
             rows=list(all_rows(c,sql+' ORDER BY st.student_id',args))
             for row in rows:
                 row['slots']=[]
             if fixed and rows:
-                links=all_rows(c,'''SELECT m.student_id,m.slot_id,t.team_name,t.manager_admin_id FROM slot_member m
-                    JOIN service_slot t ON t.slot_id=m.slot_id''')
+                owner_ok=business_owner_available(c) and business_link_available(c)
+                owner_col=',b.total_manager_admin_id AS business_owner_admin_id' if owner_ok else ''
+                owner_join=' LEFT JOIN business b ON b.business_id=t.business_id' if owner_ok else ''
+                links=all_rows(c,f'''SELECT m.student_id,m.slot_id,t.team_name,t.manager_admin_id{owner_col} FROM slot_member m
+                    JOIN service_slot t ON t.slot_id=m.slot_id{owner_join}''')
                 by_id={r['student_id']:r for r in rows}
                 for link in links:
-                    if link['student_id'] in by_id and (a['_role']=='SUPER' or link['manager_admin_id']==a['_id']):
+                    if link['student_id'] in by_id and (a['_role']=='SUPER' or link['manager_admin_id']==a['_id'] or owner_ok and link['business_owner_admin_id']==a['_id']):
                         by_id[link['student_id']]['slots'].append({'slot_id':link['slot_id'],'name':link['team_name']})
             return rows
 
     def configure_slot(self, actor, slot_id, manager_admin_id, need_num):
         require(need_num is None or isinstance(need_num,int) and 1<=need_num<=10000,'人数上限必须为 1 至 10000，或留空待设置',422)
         with self.db.transaction(True) as c:
-            a=self.actor(c,actor,('SUPER','LEAD'))
+            a=self.actor(c,actor,('SUPER','LEAD','NORMAL'))
             before=self.slot(c,slot_id)
+            if a['_role']=='NORMAL':
+                require_business_owner(c,a,before['business_id'])
             if a['_role']=='LEAD':
                 self.scope(a,before)
                 if manager_admin_id is not None:
@@ -654,8 +708,6 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
                         OR EXISTS(SELECT 1 FROM slot_member m WHERE m.student_id=ad.student_id AND m.slot_id IN ({marks})))''',[manager_admin_id]+ids*2),
                         '请选择本范围时段管理员，或先将本范围队员设为管理员',403)
             require(before.get('weekday') is not None or before.get('schedule_kind')=='WEEKLY','只能设置固定时段或按周岗位',422)
-            require(before.get('business_code') not in ('GARDEN','PUBLICITY') or manager_admin_id==before['manager_admin_id'],
-                    '请在业务管理中统一设置该业务的负责人',422)
             if manager_admin_id is not None:
                 require(one(c,"SELECT admin_id FROM admin WHERE admin_id=%s AND role='NORMAL' AND status='ACTIVE'",(manager_admin_id,)), '负责人须为有效普通管理员',422)
             occupied=one(c,"SELECT MAX(n) AS n FROM (SELECT COUNT(*) AS n FROM schedule WHERE slot_id=%s AND status='ACTIVE' AND schedule_date>=CURDATE() GROUP BY schedule_date) q",(slot_id,))['n'] or 0
@@ -767,63 +819,132 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
                    {'status':desired,'old_slot_id':app['old_slot_id'],'new_slot_id':app['new_slot_id']},'每周固定班次调整')
         return {'status':desired,'fixed_membership_updated':stage=='final' and desired=='APPROVED'}
 
-    def import_roster(self, actor, file_base64, sheet_name=None, map_categories=True,
-                      commit=False, initial_password=None, accept_warnings=False,business_id=None):
-        from .roster import parse_workbook
-        with self.db.transaction() as c:
-            self.actor(c,actor,('SUPER',))
+    def _slot_conflict(self,c,student_id,previous,target_ids):
+        """Return (slots to release, message) when a fixed-business join conflicts."""
+        def valid(ids):
+            self._validate_memberships(c,student_id,ids);return True
         try:
-            preview=parse_workbook(file_base64,sheet_name,map_categories)
+            valid(previous+target_ids);return (None,'')
+        except DomainError as exc:
+            message=exc.message
+        for slot in sorted(set(previous)):
+            try:
+                valid([s for s in previous if s!=slot]+target_ids);return ([slot],message)
+            except DomainError:
+                pass
+        return (sorted(set(previous)),message)
+
+    def import_roster(self, actor, file_base64, sheet_name=None, map_categories=True,
+                      commit=False, initial_password=None, accept_warnings=False,
+                      business_id=None, slot_id=None, approvals=None):
+        """固定业务名单导入：三级页传 slot_id 时全员归该时段，忽略「分类」列。"""
+        from .roster import parse_workbook
+        from .import_common import OK, PENDING, SKIP, evaluate
+        approvals={str(k):bool(v) for k,v in (approvals or {}).items()}
+        with self.db.transaction() as c:
+            self.actor(c,actor,('SUPER','NORMAL'))
+            slot=one(c,'SELECT * FROM service_slot WHERE slot_id=%s',(slot_id,)) if slot_id else None
+            if slot_id:
+                require(slot and slot['weekday'],'请选择有效的固定时段',422)
+                business_id=business_id or slot['business_id']
+            biz=one(c,'SELECT * FROM business WHERE business_id=%s',(business_id,)) if business_id else None
+            force_pair=(slot['weekday'],slot['period_no']) if slot else None
+        try:
+            preview=parse_workbook(file_base64,sheet_name,map_categories,force_pair)
         except Exception as exc:
-            if isinstance(exc,ValueError):
-                raise DomainError(str(exc),422) from exc
+            if isinstance(exc,ValueError):raise DomainError(str(exc),422) from exc
             raise DomainError('无法读取该工作簿，请检查是否为有效的 .xlsx 文件',422) from exc
-        # Reparse and revalidate the submitted workbook on every commit.
         with self.db.transaction(commit) as c:
-            a=self.actor(c,actor,('SUPER',))
+            a=self.actor(c,actor,('SUPER','NORMAL'))
             from .business_schema import installed as business_installed
             multi=business_installed(c)
             if multi:
                 biz=one(c,'SELECT * FROM business WHERE business_id=%s',(business_id,)) if business_id else one(c,"SELECT * FROM business WHERE code='CONSULT'")
                 require(biz and biz['kind']=='FIXED','请选择咨询服务、美育或青广宣传；专项时长使用专项导入',422)
+                require_business_owner(c,a,biz['business_id'],'只能管理本人负责业务的名单')
                 slots=all_rows(c,'SELECT slot_id,weekday,period_no FROM service_slot WHERE business_id=%s AND weekday IS NOT NULL',(biz['business_id'],))
                 preview['business_name']=biz['name']
-            else:slots=all_rows(c,'SELECT slot_id,weekday,period_no FROM service_slot WHERE weekday IS NOT NULL')
+            else:
+                slots=all_rows(c,'SELECT slot_id,weekday,period_no FROM service_slot WHERE weekday IS NOT NULL')
             mapping={(s['weekday'],s['period_no']):s['slot_id'] for s in slots}
-            existing={r['student_id']:r for r in all_rows(c,'SELECT student_id,name,status FROM student')}
-            for person in preview['students']:
-                old=existing.get(person['student_id'])
-                person['action']='existing' if old else 'new'
-                if old and (old['name']!=person['name'] or old['status']!='ACTIVE'):
-                    preview['errors'].append({'row':person['rows'][0],'message':f'学号 {person["student_id"]} 已存在但姓名不同或账号不在队，不会覆盖或重新启用'})
-                try:
-                    require(all(tuple(pair) in mapping for pair in person['slots']),'所选业务没有表格中的时段，请核对业务与时段编号',422)
-                    if multi:
-                        previous=[r['slot_id'] for r in all_rows(c,'SELECT slot_id FROM slot_member WHERE student_id=%s',(person['student_id'],))]
-                        self._validate_memberships(c,person['student_id'],previous+[mapping[tuple(pair)] for pair in person['slots']])
-                except DomainError as exc:
-                    preview['errors'].append({'row':person['rows'][0],'message':exc.message})
-            preview['new_students']=sum(p['action']=='new' for p in preview['students'])
-            preview['existing_students']=len(preview['students'])-preview['new_students']
-            if not commit:
-                return preview
-            require(not preview['errors'],'预览存在错误，请先修正工作簿后重试',422)
-            require(not preview['warnings'] or accept_warnings,'请先确认导入预览中的提示',422)
-            require(preview['students'],'没有可导入的队员',422)
-            require(initial_password and 8<=len(initial_password)<=128,'请设置 8 至 128 字符的新队员初始密码',422)
-            require(mapping,'固定时段尚未初始化')
-            added_memberships=0
-            self.snapshot_memberships(c)
-            for person in preview['students']:
+            existing={r['student_id']:r for r in all_rows(c,'SELECT * FROM student')}
+            people=preview['students'];errors=[];pending=[];release={}
+            for person in people:
                 sid=person['student_id']
-                if person['action']=='new':
+                verdict=evaluate(person,existing.get(sid),approvals.get(sid))
+                person.update({'status':verdict['status'],'issue':verdict['issue'],'detail':verdict['detail'],
+                               'new':verdict['new'],'slots':[tuple(p) for p in person['slots']]})
+                if not all(pair in mapping for pair in person['slots']):
+                    errors.append({'row':person['rows'][0],'message':'所选业务没有表格中的时段，请核对业务与时段编号'});continue
+                target=[mapping[pair] for pair in person['slots']]
+                if verdict['status']==SKIP or not target:continue
+                previous=[r['slot_id'] for r in all_rows(c,'SELECT slot_id FROM slot_member WHERE student_id=%s',(sid,))]
+                need,message=self._slot_conflict(c,sid,previous,target)
+                if not need:continue
+                release[sid]=need
+                if approvals.get(sid):
+                    person.update({'detail':message,'status':OK,'issue':None})
+                else:
+                    person.update({'status':PENDING,'issue':'slot','detail':message})
+            preview['errors']=errors
+            for person in people:
+                if person['status']==PENDING:
+                    pending.append({'student_id':person['student_id'],'name':person['name'],
+                                    'issue':person['issue'],'detail':person['detail'],
+                                    'rows':person['rows'],'sheets':person['sheets'],
+                                    'target':', '.join(f'周{"一二三四五六日"[d-1]}-第{p}时段' for d,p in person['slots']) or '仅建账号'})
+            credits=[{'student_id':p['student_id'],'name':p['name'],'message':p['detail']}
+                     for p in people if p['status']==SKIP]
+            stats={'students':len(people),'new_accounts':sum(1 for p in people if p.get('new')),
+                   'existing':sum(1 for p in people if not p.get('new')),
+                   'pending':len(pending),'skipped':len(preview.get('skipped',[]))+len(credits),
+                   'memberships':sum(len(p['slots']) for p in people if p['status']!=SKIP)}
+            preview.update({'pending':pending,'stats':stats,'credits':credits,
+                            'target_slot':({'slot_id':slot['slot_id'],'label':f'周{"一二三四五六日"[slot["weekday"]-1]}-第{slot["period_no"]}时段'} if slot else None),
+                            'scope':({'kind':'SLOT','id':slot['slot_id']} if slot else ({'kind':'BUSINESS','id':biz['business_id']} if biz else None)),
+                            'new_students':stats['new_accounts'],'existing_students':stats['existing'],
+                            'unique_students':len(people),'memberships':stats['memberships']})
+            if not commit:return preview
+            require(not errors,'预览存在错误，请先修正工作簿后重试',422)
+            importable=[p for p in people if p['status']==OK]
+            require(importable,'没有可导入的记录，请先确认待处理的行',422)
+            require(not stats['new_accounts'] or initial_password and 8<=len(initial_password)<=128,'请设置 8 至 128 字符的新队员初始密码',422)
+            require(mapping,'固定时段尚未初始化')
+            file_hash=hashlib.sha256(file_base64.encode()).hexdigest()
+            request_hash=hashlib.sha256(json.dumps({'file':file_hash,'business':business_id,'slot':slot_id,
+                'approvals':approvals},sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+            old=one(c,'SELECT batch_id FROM member_import WHERE request_hash=%s',(request_hash,))
+            if old:
+                return {'replayed':True,'batch_id':old['batch_id'],'new_students':0,'existing_students':0,
+                        'added_memberships':0,'pending':len(pending),'skipped':stats['skipped']}
+            c.execute('INSERT INTO member_import(file_hash,request_hash,admin_id,created_at,scope_kind,scope_id) VALUES(%s,%s,%s,%s,%s,%s)',
+                      (file_hash,request_hash,a['_id'],self.clock(),'SLOT' if slot else 'BUSINESS',
+                       slot['slot_id'] if slot else (biz['business_id'] if biz else None)))
+            batch=c.lastrowid;added=0;removed=[]
+            self.snapshot_memberships(c)
+            for person in importable:
+                sid=person['student_id']
+                if person.get('new'):
                     c.execute('INSERT INTO student(student_id,name,college,password_hash) VALUES(%s,%s,%s,%s)',
                               (sid,person['name'],person['college'],hash_password(initial_password)))
-                for pair in person['slots']:
-                    slot_id=mapping[tuple(pair)]
-                    if not one(c,'SELECT student_id FROM slot_member WHERE student_id=%s AND slot_id=%s',(sid,slot_id)):
-                        c.execute('INSERT INTO slot_member(student_id,slot_id) VALUES(%s,%s)',(sid,slot_id));added_memberships+=1
-            summary={'new_students':preview['new_students'],'existing_students':preview['existing_students'],'added_memberships':added_memberships}
-            self.audit(c,a['_id'],'IMPORT_ROSTER','student','batch',after=summary,reason='Excel 队员导入')
+                elif approvals.get(sid) and existing.get(sid) and existing[sid]['status']!='ACTIVE':
+                    c.execute("UPDATE student SET status='ACTIVE' WHERE student_id=%s AND status='QUIT'",(sid,))
+                for slot_to_release in release.get(sid,[]) or []:
+                    if one(c,'SELECT 1 FROM slot_member WHERE student_id=%s AND slot_id=%s',(sid,slot_to_release)):
+                        c.execute('DELETE FROM slot_member WHERE student_id=%s AND slot_id=%s',(sid,slot_to_release))
+                        removed.append([sid,slot_to_release])
+                for slot_to_add in [mapping[pair] for pair in person['slots']]:
+                    if not one(c,'SELECT student_id FROM slot_member WHERE student_id=%s AND slot_id=%s',(sid,slot_to_add)):
+                        c.execute('INSERT INTO slot_member(student_id,slot_id) VALUES(%s,%s)',(sid,slot_to_add));added+=1
+                sheet,number=person['keys'][0].rsplit(':',1)
+                c.execute('INSERT INTO member_import_row(batch_id,sheet_name,row_no,student_id,business_id,group_id,slot_id,created_account) VALUES(%s,%s,%s,%s,%s,NULL,%s,%s)',
+                          (batch,sheet,int(number),sid,biz['business_id'],
+                           (mapping[person['slots'][0]] if person['slots'] else (slot['slot_id'] if slot else None)),
+                           1 if person.get('new') else 0))
+            c.execute('UPDATE member_import SET imported_count=%s,skipped_count=%s,removed_slots=%s WHERE batch_id=%s',
+                      (len(importable),stats['skipped'],json.dumps(removed,ensure_ascii=False),batch))
+            summary={'new_students':stats['new_accounts'],'existing_students':max(stats['existing']-stats['skipped'],0),
+                     'added_memberships':added,'batch_id':batch,'pending':len(pending),'skipped':stats['skipped']}
+            self.audit(c,a['_id'],'IMPORT_ROSTER','member_import',batch,after=summary,reason='Excel 队员导入；只建立账号和归属，不计时')
             self.sync_semesters(c)
             return summary

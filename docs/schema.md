@@ -315,4 +315,20 @@ erDiagram
 
 ## 2026-09-27 管理员关联升级
 
-`admin.student_id` 为可空的 VARCHAR(32)，唯一外键引用 student.student_id。一个队员最多对应一个管理员身份，独立管理员为空；表数量仍为 17。关联管理员按队员当前密码验证，关联队员停用／退队后暂停权限。负责人仍使用 service_slot.manager_admin_id；授权不改变 slot_member。`PROMOTE_STUDENT` 审计记录保存负责时段变更和原因，密码不进入接口响应或审计。
+`admin.student_id` 为可空的 VARCHAR(32)，唯一外键引用 student.student_id。一个队员最多对应一个管理员身份，独立管理员为空；表数量仍为 17。关联管理员按队员当前密码验证，关联队员停用／退队后暂停权限。时段负责人使用 service_slot.manager_admin_id；授权不改变 slot_member。`PROMOTE_STUDENT` 审计记录保存负责时段变更和原因，密码不进入接口响应或审计。
+
+## 2026-11-10 业务负责人收敛（2.5.4）
+
+- 业务级负责人只保留 `business.total_manager_admin_id`（FK → admin.admin_id，可空）一个口径：业务负责人由超管通过 `PUT /businesses/{id}/owner` 指定，对整业务有管理权，但不覆盖 `service_slot.manager_admin_id`（时段负责人）与 `leader_scope.admin_id`（分队负责人）。
+- `business.manager_admin_id` 停用：代码不再读写、不再镜像覆盖 `service_slot`，列保留一版以便回滚；`PUT /businesses/{id}/manager` 若被调用，等价于设置业务负责人，不再改动任何时段的负责人。
+- `business.manager_scope` 降级为目录展示属性，不再参与鉴权。
+- 业务负责人可见：本业务全部时段/成员/考勤/时长（`scope()` 与各列表过滤均接受「时段负责人 or 该业务业务负责人」）；可改时段与容量、建小组、调成员、导入名单、发布/关闭时长征集、按本业务×星期任命分队负责人、指定小组征集负责人、审批时长上调/请假/换班。不可自封、改名、归档或跨业务操作。
+- 正式库 `volunteer_core` 已于 2026-11-10 执行 `app.business_schema.migrate`（脚本 `.work/migrate_business_owner.py`）：`business` 表结构为 `business_id, code, kind, manager_admin_id, manager_scope, name, revision, status, total_manager_admin_id`，外键 `fk_business_owner → admin.admin_id`；10 个业务的两个负责人字段均为 NULL（无历史数据搬迁）。同一时段执行 `app.leaders.migrate`（`.work/migrate_leaders_owner.py`）复核 `leader_scope.business_id/active` 与 22 行动作范围，均无变化。
+
+## 2026-11-10 Excel 导入重构（2.5.5）
+
+- 两个导入入口（`POST /students/import` 固定业务、`POST /member-imports` 非固定业务/小组）共用一张批次表。`app.directory_schema.migrate` 以 `SHOW COLUMNS` 守卫幂等补列，老库与 17 表基线都不需要重建。
+- `member_import` 新增：`scope_kind VARCHAR(16) NULL`（BUSINESS/SLOT/GROUP）、`scope_id BIGINT UNSIGNED NULL`、`imported_count INT NOT NULL DEFAULT 0`、`skipped_count INT NOT NULL DEFAULT 0`、`removed_slots JSON NULL`（被本次导入退出的冲突时段，撤销时加回）、`reverted_at DATETIME NULL`（撤销后置位，禁止二次撤销）。
+- `member_import_row` 新增：`slot_id BIGINT UNSIGNED NULL`（固定业务行落点时段）、`created_account TINYINT NOT NULL DEFAULT 0`（撤销时只删本次新建、且没有其他归属的账号）。
+- 撤销信息不新增表：新增账号 = `created_account=1`；新增归属 = 行上的 `business_id/group_id/slot_id`；被移除的冲突时段 = `removed_slots`；审计写 `REVERT_MEMBER_IMPORT`。
+

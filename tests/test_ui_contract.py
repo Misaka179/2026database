@@ -44,7 +44,7 @@ function element(key) {
   if (!elements.has(key)) elements.set(key, {
     innerHTML:'', textContent:'', open:false, dataset:{},listeners:{},isConnected:true,
     classList:{add(){},remove(){},toggle(){}},
-    addEventListener(type,callback){this.listeners[type]=callback;},setAttribute(){},removeAttribute(){},focus(){},
+    addEventListener(type,callback){this.listeners[type]=callback;},setAttribute(){},removeAttribute(){},focus(){},scrollTo(){},
     showModal(){this.open=true;},close(){this.open=false;},
     querySelector(){return null;},querySelectorAll(){return [];},
     append(){},remove(){}
@@ -59,18 +59,20 @@ class FixedDate extends Date {constructor(...args){super(...(args.length?args:[n
 const context = vm.createContext({
   console, Date:FixedDate, Intl, URLSearchParams, AbortSignal,
   sessionStorage:storage(),localStorage:storage(),
-  matchMedia:()=>({matches:false}),setTimeout:()=>0,
+  matchMedia:()=>({matches:false}),setTimeout:()=>0,scrollTo:()=>{},
   document:{querySelector:element,querySelectorAll:()=>[],
     documentElement:{dataset:{}},activeElement:null,addEventListener:(type,callback)=>documentHandlers.set(type,callback),
     createElement:()=>element('created')},
   fetch:()=>new Promise(()=>{})
 });
+// 浏览器里 window 就是全局对象；三级导航脚本通过 window 挂载被替换的页面函数
+context.window = context;
 const source = fs.readFileSync(process.argv[1], 'utf8').replace(/\nstart\(\);\s*$/, '\n');
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'roster-ui.js'),'utf8'),context,{filename:'roster-ui.js'});
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'semester-ui.js'),'utf8'),context,{filename:'semester-ui.js'});
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'business-ui.js'),'utf8'),context,{filename:'business-ui.js'});
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'collection-ui.js'),'utf8'),context,{filename:'collection-ui.js'});
-for(const name of ['submission-ui.js','governance-ui.js','directory-ui.js','batch-ui.js','leader-ui.js'])vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),name),'utf8'),context,{filename:name});
+for(const name of ['submission-ui.js','governance-ui.js','directory-ui.js','batch-ui.js','leader-ui.js','business-navigation.js'])vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),name),'utf8'),context,{filename:name});
 vm.runInContext(source,context,{filename:'app.js'});
 const run = code => vm.runInContext(code,context);
 const response = value => ({ok:true,status:200,json:async()=>value});
@@ -340,14 +342,45 @@ assert.equal(element('#action-dialog').open,false);
 run("openDialog('导入业务／小组名单','','',()=>Promise.resolve())");
 run('closeDialog()');
 assert.equal(element('#action-dialog').open,false);
-run("openMemberImport=()=>{throw new Error('不应打开导入弹窗')}");
-for(const role of ['SUPER','NORMAL','STUDENT']) {
-  run(`state.role='${role}';state.data={groups:[]};groupsPage()`);
-  const html=element('#main').innerHTML;
-  assert.equal(html.includes('data-action="member-import"'),role==='SUPER');
-  assert.equal(element('#action-dialog').open,false);
-  if(role!=='SUPER')assert.doesNotThrow(()=>run("directoryAction('member-import')"));
-}
+run("openImportDialog=(kind,id)=>{globalThis.__scope=[kind,id]}");
+context.fetch=async()=>response([]);
+(async()=>{
+  for(const [role,canManage] of [['SUPER',true],['NORMAL',true],['NORMAL',false],['STUDENT',false]]) {
+    await run(`state.role='${role}';state.data={groups:[{group_id:5,business_id:3,name:'甲组'}],businesses:[{business_id:3,name:'明远学术汇',kind:'EVENT',status:'ACTIVE',can_manage:${canManage}}],slots:[],students:[]};renderGroupMembers(5)`);
+    const html=element('#main').innerHTML;
+    assert.equal(html.includes('data-action="excel-import"'),canManage);
+    assert.equal(element('#action-dialog').open,false);
+    if(canManage)assert.doesNotThrow(()=>run("directoryAction('member-import','5')"));
+  }
+})().catch(error=>{console.error(error);process.exitCode=1;});
+""")
+
+    def test_slot_member_entries_follow_role_and_business_kind(self):
+        self.js(r"""
+run(`state.me={name:'管理员',admin_id:1};state.role='SUPER';state.data={
+  slots:[{slot_id:8,business_id:2,team_name:'周二-一时段',weekday:2,period_no:1,status:'ACTIVE'}],
+  businesses:[{business_id:2,name:'咨询服务',kind:'FIXED',status:'ACTIVE'}],
+  students:[{student_id:'001',name:'甲',college:'计算机',status:'ACTIVE',slots:[{slot_id:8,name:'周二-一时段'}]},
+            {student_id:'002',name:'乙',college:'软件',status:'ACTIVE',slots:[{slot_id:9,name:'周三-一时段'}]}]};`);
+run('renderSlotMembers(8)');
+let html=element('#main').innerHTML;
+assert.match(html,/data-action="excel-import" data-kind="SLOT" data-id="8"/);
+assert.match(html,/data-action="add-slot-member" data-id="8"/);
+assert.match(html,/甲/);
+assert.doesNotMatch(html,/乙/);
+run("state.role='NORMAL';renderSlotMembers(8)");
+assert.doesNotMatch(element('#main').innerHTML,/data-action="excel-import"/);
+run("state.role='SUPER';state.data.businesses[0].status='ARCHIVED';renderSlotMembers(8)");
+assert.doesNotMatch(element('#main').innerHTML,/data-action="add-slot-member"/);
+""")
+
+    def test_roster_basics_page_no_longer_offers_roster_import(self):
+        self.js(r"""
+run("state.me={name:'管理员',admin_id:1};state.role='SUPER';state.tab='students';state.data={students:[],slots:[],admins:[]};rosterBasicsPage()");
+assert.doesNotMatch(element('#main').innerHTML,/data-action="import-roster"/);
+assert.doesNotMatch(element('#main').innerHTML,/data-action="create-students"/);
+run("state.tab='admins';rosterBasicsPage()");
+assert.match(element('#main').innerHTML,/data-action="create-admins"/);
 """)
 
     def test_late_unauthorized_response_cannot_sign_out_new_session(self):
@@ -496,7 +529,7 @@ assert.match(html,/<dt>服务分钟数<\/dt><dd>0<\/dd>/);
         self.js(r"""
 run("state.role='SUPER';state.data={students:[{student_id:'001',name:'测试队员',status:'ACTIVE'}],admins:[{admin_id:7,account:'001',name:'测试队员',student_id:'001',role:'NORMAL',status:'ACTIVE'}],slots:[]};");
 assert.match(run('rosterStudentTable(state.data.students)'),/reset-student-password/);
-run("state.tab='admins';basicsPage();");
+run("state.tab='admins';rosterBasicsPage();");
 assert.match(element('#main').innerHTML,/reset-admin-password/);
 run("action('reset-student-password','001');");
 assert.match(element('#action-dialog').innerHTML,/同步使用新密码/);
