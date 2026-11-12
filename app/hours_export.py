@@ -12,6 +12,8 @@ def export_hours(service, actor, semester_id, business_id=None, group_id=None):
     from .service import require
     with service.db.transaction() as c:
         viewer=service.actor(c, actor, ('SUPER','NORMAL'))
+        if viewer['_role']=='NORMAL':
+            require(bool(viewer['_lead_slots']),'只有超级管理员或分队负责人可以导出学期时长报表',403)
         term = one(c, 'SELECT * FROM semester WHERE semester_id=%s', (semester_id,))
         require(term, '学期不存在', 404)
         students = all_rows(c, 'SELECT student_id,name,college,status FROM student ORDER BY student_id')

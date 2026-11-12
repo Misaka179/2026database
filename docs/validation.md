@@ -284,3 +284,39 @@ MySQL 8.x 未在本机运行验证。此次包含本机业务页面与接口的�
 - 截图：`.work/audit/app-shots/change-password-dialog.png`、`change-password-same-error.png`、`change-password-success-bar.png`。
 
 
+## 2026-11-12 自动化回归结果与待修复项
+
+执行命令：`python -m unittest discover -s tests -v`。
+
+结果：**243 项运行，4 项失败、1 项错误**；耗时 **946.012 秒**。以下记录为本次运行输出，不代表后续已修复或重新验证。
+
+### 错误
+
+| 测试 | 结果 |
+|---|---|
+| `test_core.CoreIntegrationTests.test_withdrawal_preserves_history_and_cancels_today_and_future` | `approve_withdrawal` 检查普通管理员权限时查询 `volunteer_core_test.slot_member`，MySQL 返回 1146：该表不存在。 |
+
+### 失败
+
+| 测试 | 断言结果 |
+|---|---|
+| `test_batch.BatchTests.test_first_review_required_and_mixed_replay` | 普通管理员对第一条 30 分钟申报调用 `decide_hours(..., True, ...)` 后，实际总时长为 30 分钟，测试预期为 0。 |
+| `test_hours_export.ExportDatabaseTests.test_only_super_can_export_and_invalid_term_is_rejected` | 测试预期普通管理员导出时抛出 `DomainError`，但没有抛出。 |
+| `test_leaders.LeaderTests.test_withdrawal_single_review_and_no_leader_fallback` | 测试预期 `self.normal` 调用 `first_review_withdrawal` 时抛出 `DomainError`，但没有抛出。 |
+| `test_ui_contract.WorkbenchBehaviorTests.test_password_reset_dialog_checks_confirmation_and_role` | 测试预期管理员档案 HTML 包含 `reset-admin-password`；实际读到的仍是队员档案 HTML，包含 `reset-student-password`。 |
+
+### 后续处理说明
+
+测试库缺表项需要核对测试夹具的迁移准备与当前代码所需 schema。其余失败需要先对照现行业务规则，区分实现缺陷与过时/不准确的测试断言；未确认规则前不据此调整审批或授权行为。
+
+### 本轮修复及针对性回归
+
+按已确认的业务规则完成五项回归修复：
+
+- 退队审核权限改为只认申请创建时快照的唯一有效分队负责人；无唯一负责人时普通管理员无权审核，超级管理员可兜底。基础测试 schema 未安装分队负责人迁移时，权限检查安全拒绝且不查询不存在的 `slot_member` 表。
+- 时长征集在存在有效业务总负责人时，负责人初审通过只保留 `PENDING`，不产生时长流水；超级管理员终审后才入账。无有效业务总负责人时，超级管理员可直接审批。初审打回可按新版本重报，审核阶段与幂等重试均保留。
+- 学期报表导出权限限于超级管理员和已任命的分队负责人；负责人导出仍按其范围过滤，普通时段管理员拒绝。
+- UI 契约测试先关闭队员档案对话框再打开管理员档案，保留产品阻止覆盖已打开对话框的行为。
+- 同步更新征集操作说明、审批记录阶段名称，以及相关回归测试。
+
+针对性验证通过：数据库回归 **19 项**，耗时 100.349 秒；`test_ui_contract.py` **34 项**，初次耗时 3.805 秒。为覆盖打回后重报场景，随后重跑 `GovernanceTests` 7 项（50.655 秒）；最终代码再运行 `GovernanceTests` 和批量初审/重放用例，共 **8 项通过**，耗时 66.102 秒。最终再次运行 `test_ui_contract.py`，**34 项通过**，耗时 5.509 秒。以上覆盖的独立测试共 **53 项通过，0 失败，0 错误**。数据库回归覆盖缺迁移表退队权限、负责人初审/超管终审、无负责人超管直接审批、批量事务与重放、分队负责人导出、普通时段管理员导出拒绝及退队负责人权限。完整 243 项套件尚未在本轮重新运行。

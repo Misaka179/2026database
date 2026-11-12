@@ -50,27 +50,16 @@ class InboxService:
         row=self._withdrawal_reviewer_recipients(c,withdrawal_id)
         return row[0][1] if row else None
 
-    def _can_review_withdrawal(self,c,a,student_id):
-        """退队申请：时段负责人、业务总负责人、分队负责人或超管均可一次审核。"""
+    def _can_review_withdrawal(self,c,a,withdrawal_id):
         if a['_role']=='SUPER':return True
         if a['_role']!='NORMAL':return False
-        if one(c,'''SELECT 1 FROM slot_member m
-            JOIN service_slot t ON t.slot_id=m.slot_id
-            LEFT JOIN business b ON b.business_id=t.business_id
-            WHERE m.student_id=%s AND (t.manager_admin_id=%s OR b.total_manager_admin_id=%s) ''',
-                (student_id,a['_id'],a['_id'])):
-            return True
-        if one(c,'''SELECT 1 FROM business_member bm JOIN business b ON b.business_id=bm.business_id
-            WHERE bm.student_id=%s AND b.total_manager_admin_id=%s
-            AND bm.effective_from<=CURDATE() AND (bm.effective_until IS NULL OR bm.effective_until>=CURDATE())''',
-                (student_id,a['_id'])):
-            return True
         from .leaders import installed as leaders_installed
-        return bool(leaders_installed(c) and one(c,'''SELECT 1 FROM slot_member m
-            JOIN service_slot t ON t.slot_id=m.slot_id
-            JOIN leader_scope g ON g.business_id=t.business_id AND g.weekday=t.weekday
-            WHERE m.student_id=%s AND g.admin_id=%s AND g.active=1''',
-                (student_id,a['_id'])))
+        return bool(leaders_installed(c) and one(c,'''SELECT 1 FROM withdrawal_leader_review w
+            JOIN leader_scope g ON g.scope_id=w.scope_id
+            JOIN admin ad ON ad.admin_id=g.admin_id
+            WHERE w.withdrawal_id=%s AND g.admin_id=%s AND g.active=1
+            AND ad.role='NORMAL' AND ad.status='ACTIVE' ''',
+            (withdrawal_id,a['_id'])))
 
     def _notice(self,c,recipients,event_key,category,title,message,page,target=None):
         if not installed(c):return

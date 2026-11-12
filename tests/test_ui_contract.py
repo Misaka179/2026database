@@ -581,6 +581,7 @@ run("state.role='SUPER';state.data={students:[{student_id:'001',name:'测试队�
 assert.doesNotMatch(run('rosterStudentTable(state.data.students)'),/reset-student-password/);
 run("openStudentProfile('001')");
 assert.match(element('#action-dialog').innerHTML,/reset-student-password/);
+run('closeDialog()');
 run("state.tab='admins';rosterBasicsPage();");
 assert.doesNotMatch(element('#main').innerHTML,/reset-admin-password/);
 run("openAdminProfile(7)");

@@ -481,7 +481,7 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
             from .leaders import installed as leaders_installed
             leaders_installed_now=leaders_installed(c)
             if a['_role']=='NORMAL':
-                require(self._can_review_withdrawal(c,a,app['student_id']),'该退队申请不属于你的负责范围',403)
+                require(self._can_review_withdrawal(c,a,withdrawal_id),'该退队申请不属于你的负责范围',403)
             # 超级管理员可兜底审核任意待处理退队申请。
             if app['approve_status']==desired:
                 return {'status':desired,'replayed':True}
@@ -719,7 +719,7 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
                 args=tuple(args)
             rows=all_rows(c,sql+f' ORDER BY p.{key} DESC',args)
             if a['_role']=='NORMAL' and kind=='withdrawal':
-                rows=[r for r in rows if self._can_review_withdrawal(c,a,r['student_id'])]
+                rows=[r for r in rows if self._can_review_withdrawal(c,a,r['withdrawal_id'])]
             for row in rows:
                 if kind=='withdrawal':
                     from .leaders import installed as leaders_installed
@@ -747,7 +747,7 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
                 else:
                     pending=row['approve_status']=='PENDING'
                 if a['_role']=='NORMAL':
-                    row['can_review']=pending and (kind!='withdrawal' or self._can_review_withdrawal(c,a,row['student_id']))
+                    row['can_review']=pending and (kind!='withdrawal' or self._can_review_withdrawal(c,a,row['withdrawal_id']))
                 else:
                     row['can_review']=pending
             return rows

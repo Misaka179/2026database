@@ -3,7 +3,7 @@ function submissionFiles(s){
  return (s.attachments||[]).map(f=>`<button class="text-button" data-action="submission-file" data-id="${f.attachment_id}" data-kind="${s.submission_id}">${esc(f.filename)} · ${Math.ceil(f.size_bytes/1024)} KB</button>`).join('');
 }
 function submissionReviewHistory(s){
- return s.reviews?.length?'<details><summary>审批记录</summary>'+s.reviews.map(r=>`<p>${esc(({REVIEW:'审核',FIRST:'审核（历史初审）',FINAL:'审核（历史终审）',CORRECTION:'二次更正'})[r.stage]||'审核')}：${r.approved?'通过':'打回'} · ${esc(r.admin_name)}<small>${fmtDate(r.created_at)} · ${hourText(r.service_minutes)}<br>${esc(r.reason||'未附说明')}</small></p>`).join('')+'</details>':'';
+ return s.reviews?.length?'<details><summary>审批记录</summary>'+s.reviews.map(r=>`<p>${esc(({REVIEW:'审核（历史）',FIRST:'业务负责人初审',FINAL:'超级管理员终审',DIRECT:'超级管理员直接审批',CORRECTION:'二次更正'})[r.stage]||'审核')}：${r.approved?'通过':'打回'} · ${esc(r.admin_name)}<small>${fmtDate(r.created_at)} · ${hourText(r.service_minutes)}<br>${esc(r.reason||'未附说明')}</small></p>`).join('')+'</details>':'';
 }
 async function showSubmissionFile(attachmentId,submissionId){
  const s=(state.data.collections||[]).flatMap(c=>c.submissions).find(s=>String(s.submission_id)===String(submissionId));

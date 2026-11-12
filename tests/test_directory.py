@@ -88,6 +88,8 @@ class DirectoryTests(unittest.TestCase):
         sub=self.s.submit_hours(self.student,row['items'][0]['item_id'],'2026-09-06',60,attachments=[f])['submission_id']
         self.s.set_group_member(self.sup,gid,self.sid,False,'2026-09-06','调组')
         self.s.decide_hours(self.normal,sub,True,1)
+        self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
+        self.s.decide_hours(self.sup,sub,True,2)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],60)
         self.assertEqual(self.s.hours(self.student,group_id=gid)['total_minutes'],60)
         self.assertEqual(self.s.hours(self.student,group_id=other)['total_minutes'],0)
