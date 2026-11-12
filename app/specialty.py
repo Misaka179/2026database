@@ -105,3 +105,15 @@ class SpecialtyService:
             result={'batch_id':batch,'imported':len(selected),'skipped':len(rows)-len(selected),'new_students':len(new)}
             self.audit(c,a['_id'],'IMPORT_SPECIALTY','specialty_import',batch,after={**result,'business_name':name,'duplicate_choices':choices},reason='专项名单及时长导入')
             return result
+    def specialty_import_history(self,actor):
+        with self.db.transaction() as c:
+            self.actor(c,actor,('SUPER',))
+            return all_rows(c,'''SELECT i.batch_id,i.business_id,b.name AS business_name,i.create_time,
+                ad.name AS admin_name,COUNT(r.row_no) AS row_count,
+                COUNT(DISTINCT s.student_id) AS student_count
+                FROM specialty_import i JOIN business b ON b.business_id=i.business_id
+                LEFT JOIN admin ad ON ad.admin_id=i.admin_id
+                LEFT JOIN specialty_import_row r ON r.batch_id=i.batch_id
+                LEFT JOIN schedule s ON s.schedule_id=r.schedule_id
+                GROUP BY i.batch_id,i.business_id,b.name,i.create_time,ad.name
+                ORDER BY i.batch_id DESC LIMIT 10''')

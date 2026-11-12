@@ -7,7 +7,7 @@ function importScopeInfo(kind, id){
     const slot = (state.data.slots||[]).find(s => String(s.slot_id) === String(id));
     const business = (state.data.businesses||[]).find(b => b.business_id === (slot && slot.business_id));
     return {kind:'SLOT', id:Number(id), businessId:slot?slot.business_id:null, business,
-      label:(business?business.name:'业务') + ' · ' + (slot?slot.team_name:'本班次')};
+      label:(business?business.name:'业务') + ' · ' + (slot?slotLabel(slot):'本班次')};
   }
   if(kind === 'GROUP'){
     const group = (state.data.groups||[]).find(g => String(g.group_id) === String(id));
@@ -39,13 +39,11 @@ function openImportDialog(kind, id){
   let encoded = '', preview = null, approvals = {}, mappings = {};
   const activeBusiness = scope.businessId;
 
-  const targetNote = scope.kind === 'SLOT'
-    ? `本次只导入到 ${scope.label}：表中「分类／时段」列不参与识别。`
-    : scope.kind === 'GROUP'
-      ? `本次只导入到 ${scope.label}：每张工作表都写入该小组。`
-      : fixed
-        ? '导入整个业务：按「分类／时段」列识别时段，识别不到的只建账号。'
-        : '导入整个业务：按工作表选择去向，业务已分组时必须选小组。';
+  const targetNote = scope.kind === 'SLOT' || scope.kind === 'GROUP'
+    ? `本次导入的全部人员默认归入「${scope.label}」。`
+    : fixed
+      ? `本次导入的全部人员默认归入「${scope.label}」；分类/时段识别不到的只建账号。`
+      : `本次导入的全部人员默认归入「${scope.label}」；每张工作表仍需选择小组或本表不导入。`;
 
   dialog.innerHTML = `<header class="dialog-header"><div><h2 id="dialog-title">Excel 导入</h2>
       <p id="import-target">${esc(scope.label)} · 表头须含「姓名」「学号」，学院可选</p></div><button type="button" class="close-button" data-action="close">关闭</button></header>

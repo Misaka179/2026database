@@ -182,7 +182,6 @@ class SlotCreate(Model):
     period_no:int=Field(ge=1,le=100)
     start_time:str=Field(pattern=r'^\d{2}:\d{2}$')
     end_time:str=Field(pattern=r'^\d{2}:\d{2}$')
-    location:str=Field(min_length=1,max_length=200)
     need_num:int=Field(ge=1,le=10000)
     manager_admin_id:int=Field(gt=0)
 
@@ -204,6 +203,14 @@ class Memberships(Model):
     reason:str=Field(default="超级管理员调整业务归属",min_length=1,max_length=500)
 
 
+class Affiliations(Model):
+    slot_ids:list[int]=Field(default_factory=list,max_length=86)
+    business_ids:list[int]=Field(default_factory=list,max_length=100)
+    group_ids:list[int]=Field(default_factory=list,max_length=300)
+    effective_date:date|None=None
+    reason:str=Field(default="调整队员归属",min_length=1,max_length=500)
+
+
 class RosterImport(Model):
     business_id:int|None=Field(default=None,gt=0)
     file_base64:str=Field(min_length=1,max_length=12*1024*1024)
@@ -219,13 +226,6 @@ class RosterImport(Model):
 class LeaveCreate(Model):
     images:list[str]=Field(default_factory=list,max_length=3)
     schedule_id:int=Field(gt=0)
-    reason:str=Field(min_length=1,max_length=500)
-
-
-class TransferCreate(Model):
-    old_schedule_id:int=Field(gt=0)
-    new_slot_id:int=Field(gt=0)
-    new_date:date
     reason:str=Field(min_length=1,max_length=500)
 
 
@@ -251,10 +251,6 @@ class CalendarEdit(Model):
 
 class Reason(Model):
     reason:str=Field(min_length=1,max_length=500)
-
-
-class AdminPromotion(Reason):
-    slot_ids:list[int]=Field(default_factory=list,max_length=86)
 
 
 class Decision(Model):
@@ -364,14 +360,14 @@ def student_memberships(student_id:str,body:Memberships,actor:A,service:S):
     return output(service.set_memberships(actor,student_id,**body.model_dump()))
 
 
+@app.put('/students/{student_id}/affiliations',tags=['基础资料'])
+def student_affiliations(student_id:str,body:Affiliations,actor:A,service:S):
+    return output(service.set_affiliations(actor,student_id,**body.model_dump()))
+
+
 @app.post('/admins',tags=['基础资料'])
 def create_admin(body:AdminCreate,actor:A,service:S):
     return service.create_admin(actor,**body.model_dump())
-
-
-@app.post('/students/{student_id}/administrator',tags=['基础资料'])
-def promote_student(student_id:str,body:AdminPromotion,actor:A,service:S):
-    return service.promote_student(actor,student_id,**body.model_dump())
 
 
 @app.get('/admins',tags=['基础资料'])
@@ -452,11 +448,6 @@ def leave(body:LeaveCreate,actor:A,service:S):
     return service.apply_leave(actor,**body.model_dump())
 
 
-@app.post('/applications/transfer',tags=['申请与审批'])
-def transfer(body:TransferCreate,actor:A,service:S):
-    return service.apply_transfer(actor,**body.model_dump())
-
-
 @app.post('/applications/fixed-transfer',tags=['申请与审批'])
 def fixed_transfer(body:FixedTransferCreate,actor:A,service:S):
     return service.apply_fixed_transfer(actor,**body.model_dump())
@@ -477,14 +468,20 @@ def decide_leave(leave_id:int,body:Decision,actor:A,service:S):
     return service.approve_leave(actor,leave_id,body.approved,body.reason)
 
 
+@app.post('/applications/transfer/{transfer_id}/decision',tags=['申请与审批'])
+def decide_transfer_single(transfer_id:int,body:Decision,actor:A,service:S):
+    return service.approve_transfer(actor,transfer_id,body.approved,body.reason)
+
+
 @app.post('/applications/transfer/{transfer_id}/{stage}',tags=['申请与审批'])
 def decide_transfer(transfer_id:int,stage:Literal['first','final'],body:Decision,actor:A,service:S):
-    return service.approve_transfer(actor,transfer_id,stage,body.approved)
+    # 兼容旧调用：stage 已不再区分初审/终审，一次审核即为最终结果。
+    return service.approve_transfer(actor,transfer_id,body.approved,body.reason)
 
 
 @app.post('/applications/withdrawal/{withdrawal_id}/decision',tags=['申请与审批'])
 def decide_withdrawal(withdrawal_id:int,body:Decision,actor:A,service:S):
-    return service.approve_withdrawal(actor,withdrawal_id,body.approved)
+    return service.approve_withdrawal(actor,withdrawal_id,body.approved,body.reason)
 
 
 @app.post('/attendance',tags=['考勤与时长'])
@@ -564,7 +561,7 @@ class BusinessOwner(Reason):
 
 
 class BusinessLeader(Reason):
-    student_id:str|None=Field(default=None,max_length=32)
+    admin_id:int|None=Field(default=None,gt=0)
 
 
 class BusinessWeek(Reason):
@@ -596,7 +593,8 @@ class CollectionCreate(Model):
 
 class SubmissionCreate(Model):
     item_id:int=Field(gt=0)
-    service_date:date
+    service_date:date|None=None
+    service_dates:list[date]|None=Field(default=None,max_length=60)
     service_minutes:int=Field(ge=0,le=1440)
     remark:str=Field(default='',max_length=500)
     expected_revision:int|None=Field(default=None,ge=1)
@@ -636,14 +634,9 @@ class SubmissionCorrection(SubmissionDecision):
     service_minutes:int|None=Field(default=None,ge=0,le=1440)
 
 
-class CollectionScope(Reason):
-    business_ids:list[int]=Field(max_length=100)
-    group_ids:list[int]|None=Field(default=None,max_length=100)
-
-
 @app.get('/inbox',tags=['收件箱'])
-def inbox(actor:A,service:S,unread_only:bool=False,before_id:int|None=None,limit:int=50):
-    return service.inbox(actor,unread_only,before_id,limit)
+def inbox(actor:A,service:S,unread_only:bool=False,before_id:int|None=None,limit:int=50,category:str|None=None):
+    return service.inbox(actor,unread_only,before_id,limit,category)
 
 
 @app.post('/inbox/read-all',tags=['收件箱'])
@@ -654,26 +647,6 @@ def read_all_notices(actor:A,service:S):
 @app.post('/inbox/{notice_id}/read',tags=['收件箱'])
 def read_notice(notice_id:int,actor:A,service:S):
     return service.read_notice(actor,notice_id)
-
-
-@app.get('/collection-management',tags=['征集管理范围'])
-def collection_management(actor:A,service:S):
-    return service.collection_management(actor)
-
-
-@app.put('/collection-managers/{admin_id}',tags=['征集管理范围'])
-def set_collection_managers(admin_id:int,body:CollectionScope,actor:A,service:S):
-    return service.set_collection_managers(actor,admin_id,**body.model_dump())
-
-
-@app.post('/collection-scope-requests',tags=['征集管理范围'])
-def request_collection_scope(body:CollectionScope,actor:A,service:S):
-    return service.request_collection_scope(actor,**body.model_dump())
-
-
-@app.post('/collection-scope-requests/{request_id}/decision',tags=['征集管理范围'])
-def decide_collection_scope(request_id:int,body:SubmissionDecision,actor:A,service:S):
-    return service.decide_collection_scope(actor,request_id,**body.model_dump())
 
 
 @app.post('/hour-collections/{collection_id}/close',tags=['时长征集'])
@@ -737,6 +710,11 @@ def businesses(actor:A,service:S):
     return service.businesses(actor)
 
 
+@app.get('/affiliation-catalog',tags=['业务管理'],summary='更改归属的可选项')
+def affiliation_catalog(actor:A,service:S):
+    return service.affiliation_catalog(actor)
+
+
 class BusinessSlot(Model):
     weekday:int=Field(ge=1,le=7)
     period_no:int=Field(ge=1,le=100)
@@ -745,7 +723,6 @@ class BusinessSlot(Model):
     service_minutes:int=Field(ge=1,le=1440)
     need_num:int=Field(ge=1,le=10000)
     manager_admin_id:int=Field(gt=0)
-    location:str=Field(default='',max_length=200)
 
 
 class BusinessCreate(Model):
@@ -868,7 +845,7 @@ def revert_member_import(batch_id:int,actor:A,service:S):
     return service.revert_member_import(actor,batch_id)
 
 
-@app.put('/businesses/{business_id}/manager',tags=['业务管理'],summary='设置业务负责人')
+@app.put('/businesses/{business_id}/manager',tags=['业务管理'],summary='设置业务总负责人（兼容旧入口）')
 def business_manager(business_id:int,body:BusinessManager,actor:A,service:S):
     return service.configure_business(actor,business_id,body.manager_admin_id)
 
@@ -885,7 +862,7 @@ def business_admins(business_id:int,actor:A,service:S):
 
 @app.put('/businesses/{business_id}/leaders/{weekday}',tags=['业务管理'],summary='设置分队负责人')
 def business_leader(business_id:int,weekday:int,body:BusinessLeader,actor:A,service:S):
-    return service.appoint_business_leader(actor,business_id,weekday,body.student_id,body.reason)
+    return service.appoint_business_leader(actor,business_id,weekday,body.admin_id,body.reason)
 
 
 @app.get('/business-weeks',tags=['业务管理'],summary='查询每周开工安排')
@@ -938,6 +915,11 @@ def decide_hours(submission_id:int,body:SubmissionDecision,actor:A,service:S):
     return service.decide_hours(actor,submission_id,**body.model_dump())
 
 
+@app.get('/specialty-imports',tags=['专项导入'])
+def specialty_imports(actor:A,service:S):
+    return service.specialty_import_history(actor)
+
+
 @app.post('/specialty-imports',tags=['专项导入'])
 def specialty_import(body:SpecialtyImport,actor:A,service:S):
     return service.import_specialty(actor,**body.model_dump())
@@ -966,7 +948,7 @@ def leave_image(leave_id:int,attachment_id:int,actor:A,service:S):
 
 
 class LeaderAppointment(BaseModel):
-    student_id: str | None = Field(default=None, max_length=32)
+    admin_id: int | None = Field(default=None, gt=0)
     reason: str = Field(min_length=1,max_length=500)
 
 

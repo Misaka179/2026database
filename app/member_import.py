@@ -66,12 +66,13 @@ class MemberImport:
             # 与固定业务导入一致：先只读校验账号角色并确认要建号的人，锁外完成慢哈希
             with self.db.transaction() as c0:
                 self.actor(c0, actor, ('SUPER', 'NORMAL'))
-                missing = [p['student_id'] for p in all_people
-                           if not one(c0, 'SELECT 1 FROM student WHERE student_id=%s', (p['student_id'],))]
+                existing_ids={r['student_id'] for r in all_rows(c0,'SELECT student_id FROM student')}
+                missing=[p['student_id'] for p in all_people if p['student_id'] not in existing_ids]
             if missing:
                 require(initial_password and 8 <= len(initial_password) <= 128,
                         '请填写 8 至 128 字符的新账号初始密码', 422)
-                prehashed = {sid: hash_password(initial_password) for sid in missing}
+                digest=hash_password(initial_password)
+                prehashed={sid:digest for sid in missing}
         with self.db.transaction(True if commit else False) as c:
             a = self.actor(c, actor, ('SUPER', 'NORMAL'))
             catalogue = all_rows(c, 'SELECT * FROM business')
@@ -110,16 +111,19 @@ class MemberImport:
                     errors.append({'key': row['key'], 'message': f'第 {row["row"]} 行：{problem}'})
                 elif row['formula']:
                     formula_keys.add(row['key'])
+            rows_by_sid={}
+            for row in rows:rows_by_sid.setdefault(row['student_id'],[]).append(row)
             for person in people:
                 sid = person['student_id']
                 targets = []
-                for row in person_rows(rows, sid):
+                target_sources = {}
+                for row in rows_by_sid.get(sid,()):
                     if row['key'] in skip_rows or resolved.get(row['sheet']) is None:
                         continue
                     target = resolved[row['sheet']]
                     stamp = (target['business_id'], target['group_id'])
                     if stamp not in targets:
-                        targets.append(stamp)
+                        targets.append(stamp);target_sources[stamp]=row
                 if not targets:
                     continue
                 verdict = evaluate(person, existing.get(sid), approvals.get(sid))
@@ -129,6 +133,7 @@ class MemberImport:
                 verdicts[sid] = verdict
                 verdict['targets'] = targets
                 person['targets'] = targets
+                person['target_sources'] = target_sources
                 person['status'] = verdict['status']
                 person['issue'] = verdict['issue']
                 person['detail'] = verdict['detail']
@@ -184,10 +189,11 @@ class MemberImport:
             batch = c.lastrowid
             day = self.clock().date()
             new_people = [p for p in eligible if p['new']]
-            for person in new_people:
-                c.execute('INSERT INTO student(student_id,name,college,password_hash) VALUES(%s,%s,%s,%s)',
-                          (person['student_id'], person['name'], person['college'],
-                           prehashed.get(person['student_id']) or hash_password(initial_password)))
+            if new_people:
+                c.executemany('INSERT INTO student(student_id,name,college,password_hash) VALUES(%s,%s,%s,%s)',
+                              [(p['student_id'], p['name'], p['college'],
+                               prehashed.get(p['student_id']) or hash_password(initial_password))
+                               for p in new_people])
             imported = 0
             for person in eligible:
                 sid = person['student_id']
@@ -197,10 +203,8 @@ class MemberImport:
                     self._join_business(c, bid, sid, day)
                     if gid:
                         self._join_group(c, gid, sid, day)
-                    source = next(r for r in rows if r['student_id'] == sid
-                                  and resolved.get(r['sheet']) and resolved[r['sheet']]['business_id'] == bid
-                                  and resolved[r['sheet']]['group_id'] == gid
-                                  and r['key'] not in skip_rows)
+                    source = person.get('target_sources', {}).get((bid, gid))
+                    if not source:continue
                     c.execute('INSERT INTO member_import_row(batch_id,sheet_name,row_no,student_id,business_id,'
                               'group_id,slot_id,created_account) VALUES(%s,%s,%s,%s,%s,%s,NULL,%s)',
                               (batch, source['sheet'], source['row'], sid, bid, gid,

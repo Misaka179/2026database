@@ -38,7 +38,7 @@ class BatchTests(unittest.TestCase):
         for t,rows in before.items():self.assertEqual(rows,self.rows('SELECT * FROM '+t),t)
 
     def test_first_review_required_and_mixed_replay(self):
-        cid,items=self.collection();self.s.set_collection_managers(self.sup,self.normal['id'],[self.b['干部']['business_id']],'负责')
+        cid,items=self.collection();self.s.configure_business_owner(self.sup,self.b['CONSULT']['business_id'],None,'释放咨询业务');self.s.configure_business_owner(self.sup,self.b['干部']['business_id'],self.normal['id'],'负责')
         self.s.decide_hours(self.normal,items[0]['submission_id'],True,1);items[0]['expected_revision']=2
         with self.assertRaises(DomainError):self.s.approve_hours_batch(self.sup,cid,items)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],0)

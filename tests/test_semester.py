@@ -67,8 +67,18 @@ class SemesterTests(unittest.TestCase):
         with self.db.transaction() as c:
             self.slots = {(r['weekday'], r['period_no']): r['slot_id'] for r in all_rows(c, 'SELECT * FROM service_slot WHERE weekday IS NOT NULL AND business_id=(SELECT business_id FROM business WHERE code=\'CONSULT\')')}
         self.mon, self.tue, self.wed, self.sat = [self.slots[p] for p in [(1,1), (2,3), (3,1), (6,1)]]
-        for slot in (self.mon, self.tue, self.wed, self.sat):
-            self.s.configure_slot(self.super, slot, self.normal['id'], 20)
+        def new_admin(name,account):
+            return {'kind':'admin','id':self.s.create_admin(self.super,name,account,'TestPassword123!')['admin_id']}
+        self.tue_admin=new_admin('周二时段管理员','slot-tue')
+        self.wed_admin=new_admin('周三时段管理员','slot-wed')
+        self.sat_admin=new_admin('周六时段管理员','slot-sat')
+        # 一个管理员只能负责一个时段；先释放演示数据里的旧班次绑定。
+        with self.db.transaction(True) as c:
+            c.execute('UPDATE service_slot SET manager_admin_id=NULL WHERE manager_admin_id=%s',(self.normal['id'],))
+        # mon 继续由演示普通管理员负责。
+        for slot,manager in ((self.mon,self.normal),(self.tue,self.tue_admin),
+                             (self.wed,self.wed_admin),(self.sat,self.sat_admin)):
+            self.s.configure_slot(self.super, slot, manager['id'], 20)
         self.s.set_memberships(self.super, self.student['id'], [self.mon])
         # Legacy multi-team fixture predates the one-consultation-team constraint.
         # Keep it as historical data for settlement and migration regressions.
@@ -118,11 +128,11 @@ class SemesterTests(unittest.TestCase):
         self.term()
         mon, tue, sat = self.on('2026-09-07'), self.on('2026-09-08'), self.on('2026-09-12')
         lid=self.s.apply_leave(self.student, sat, '请假',images=TEST_IMAGES)['leave_id']
-        self.s.approve_leave(self.normal,lid,True)
+        self.s.approve_leave(self.sat_admin,lid,True)
         self.now=datetime(2026,9,7,12)
         self.s.record_attendance(self.normal,mon,'ABSENT')
         self.now=datetime(2026,9,8,17)
-        self.s.record_attendance(self.normal,tue,'LATE')
+        self.s.record_attendance(self.tue_admin,tue,'LATE')
         # Absence (3) + late (1) leaves one credit; approved leave remains exempt.
         self.now=datetime(2026,9,14)
         self.s.run_weekly_settlement()
@@ -133,7 +143,7 @@ class SemesterTests(unittest.TestCase):
     def test_approved_leave_automatically_settles_without_hours_or_penalty(self):
         self.term()
         lid=self.s.apply_leave(self.student,self.on('2026-09-08'),'课程请假',images=TEST_IMAGES)['leave_id']
-        self.s.approve_leave(self.normal,lid,True)
+        self.s.approve_leave(self.tue_admin,lid,True)
         self.now=datetime(2026,9,14)
         self.s.run_weekly_settlement()
         self.assertEqual(self.s.hours(self.student)['total_minutes'],240)
@@ -191,8 +201,7 @@ class SemesterTests(unittest.TestCase):
         old=self.on('2026-09-07')
         self.now=datetime(2026,9,7,8,30)
         app=self.s.apply_fixed_transfer(self.student,self.mon,self.wed,'长期调时段')['transfer_id']
-        self.s.approve_transfer(self.normal,app,'first',True)
-        self.s.approve_transfer(self.super,app,'final',True)
+        self.s.approve_transfer(self.normal,app,True)
         rows=self.schedules()
         self.assertTrue(any(r['schedule_id']==old for r in rows))
         self.assertEqual(sum(r['slot_id']==self.mon for r in rows),1)
@@ -203,9 +212,8 @@ class SemesterTests(unittest.TestCase):
         tid=self.term()
         before=self.schedules()
         app=self.s.apply_fixed_transfer(self.student,self.mon,self.wed,'长期调时段')['transfer_id']
-        self.s.approve_transfer(self.normal,app,'first',True)
         with patch.object(self.s,'audit',side_effect=RuntimeError('audit failed')):
-            with self.assertRaises(RuntimeError): self.s.approve_transfer(self.super,app,'final',True)
+            with self.assertRaises(RuntimeError): self.s.approve_transfer(self.normal,app,True)
             with self.assertRaises(RuntimeError): self.s.set_calendar(self.super,tid,'2026-09-07','2026-09-07','REST',reason='停工')
             self.now=datetime(2026,9,14)
             with self.assertRaises(RuntimeError): self.s.run_weekly_settlement()
@@ -268,37 +276,30 @@ class SemesterTests(unittest.TestCase):
         self.s.set_memberships(self.super,self.student['id'],[self.mon])
         self.term()
         app=self.s.apply_fixed_transfer(self.student,self.mon,self.wed,'长期调整')['transfer_id']
-        self.s.approve_transfer(self.normal,app,'first',True)
         # A legacy manual occurrence conflicts with the target on a future day.
         with self.db.transaction(True) as c:
             c.execute("INSERT INTO schedule(student_id,slot_id,admin_id,schedule_date) VALUES(%s,%s,%s,'2026-09-09')",(self.student['id'],self.mon,self.normal['id']))
         before=self.schedules()
-        with self.assertRaisesRegex(DomainError,'时间冲突'):self.s.approve_transfer(self.super,app,'final',True)
+        with self.assertRaisesRegex(DomainError,'时间冲突'):self.s.approve_transfer(self.normal,app,True)
         self.assertEqual(self.schedules(),before)
         self.assertIn(self.mon,[r['slot_id'] for r in self.s.my_memberships(self.student)])
 
-    def test_single_transfer_disabled_in_service_api_and_legacy_approval(self):
+    def test_single_transfer_route_removed_and_fixed_transfer_survives_semester_migration(self):
         from fastapi.testclient import TestClient
         from app.api import app,get_service,identity
         self.term()
-        sid=self.on('2026-09-07')
-        with self.assertRaises(DomainError) as error:self.s.apply_transfer(self.student,sid,self.wed,'2026-09-09','单次')
-        self.assertEqual(error.exception.status,410)
         app.dependency_overrides[get_service]=lambda:self.s
         app.dependency_overrides[identity]=lambda:self.student
         try:
             with TestClient(app) as client:
-                self.assertEqual(client.post('/applications/transfer',json={'old_schedule_id':sid,'new_slot_id':self.wed,'new_date':'2026-09-09','reason':'单次'}).status_code,410)
+                self.assertEqual(client.post('/applications/transfer',json={'old_schedule_id':1,'new_slot_id':self.wed,'new_date':'2026-09-09','reason':'单次'}).status_code,405)
                 self.assertEqual(client.post('/semesters',json={'name':'越权','start_date':'2027-01-01','end_week':2}).status_code,403)
                 self.assertEqual(client.get('/semesters').status_code,200)
         finally:app.dependency_overrides.clear()
         with self.db.transaction(True) as c:
-            c.execute('INSERT INTO transfer_application(student_id,old_schedule_id,new_slot_id,new_date,reason) VALUES(%s,%s,%s,%s,%s)',(self.student['id'],sid,self.wed,'2026-09-09','历史单次申请'))
-            aid=c.lastrowid
-        with self.assertRaises(DomainError) as error:self.s.approve_transfer(self.normal,aid,'first',True)
-        self.assertEqual(error.exception.status,410)
+            c.execute('INSERT INTO transfer_application(student_id,old_slot_id,new_slot_id,reason) VALUES(%s,%s,%s,%s)',(self.student['id'],self.mon,self.wed,'长期换时段'))
         migrate(self.settings)
-        self.assertEqual(self.s.list_applications(self.student,'transfer')[0]['final_status'],'CANCELLED')
+        self.assertEqual(self.s.list_applications(self.student,'transfer')[0]['final_status'],'PENDING')
 
 
 if __name__=='__main__':unittest.main()

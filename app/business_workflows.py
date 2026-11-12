@@ -19,7 +19,7 @@ class BusinessWorkflows(SubmissionWorkflow):
             require(term,'学期不存在',404)
             rows=[]
             for b in all_rows(c,"SELECT * FROM business WHERE code IN ('GARDEN','PUBLICITY')"):
-                if a['_role']=='NORMAL' and b['manager_admin_id']!=a['_id'] and b.get('total_manager_admin_id')!=a['_id']: continue
+                if a['_role']=='NORMAL' and b.get('total_manager_admin_id')!=a['_id']: continue
                 saved={r['week_no']:r for r in all_rows(c,'SELECT * FROM business_week WHERE semester_id=%s AND business_id=%s',(semester_id,b['business_id']))}
                 for week in range(1,term['end_week']+1):
                     start=monday(term['start_date'])+timedelta(weeks=week-1)
@@ -107,18 +107,20 @@ class BusinessWorkflows(SubmissionWorkflow):
             require(b['kind']=='EVENT','固定业务不能通过专项导入绕过考勤',422)
             self._active_business(c,b['business_id'])
         else:
-            c.execute("INSERT INTO business(name,kind,manager_scope) VALUES(%s,'EVENT','NONE')",(name,))
+            c.execute("INSERT INTO business(name,kind) VALUES(%s,'EVENT')",(name,))
             b=one(c,'SELECT * FROM business WHERE business_id=%s',(c.lastrowid,))
             c.execute('INSERT INTO business_window(business_id,active_from) VALUES(%s,%s)',(b['business_id'],self.clock()))
+            from .leaders import ensure_event_scopes
+            ensure_event_scopes(c,b['business_id'])
         return b
 
     def _event_slot(self,c,business_id,title,duration):
         old=one(c,"SELECT slot_id FROM service_slot WHERE business_id=%s AND schedule_kind='EVENT' AND team_name=%s",(business_id,title))
         if old: return old['slot_id']
         # 临时班次沿用该业务的负责人，否则非固定业务的排班与考勤只有超管能处理
-        biz=one(c,'SELECT manager_admin_id FROM business WHERE business_id=%s',(business_id,))
-        c.execute('''INSERT INTO service_slot(business_id,schedule_kind,team_name,period_no,start_time,end_time,location,service_minutes,manager_admin_id)
-            VALUES(%s,'EVENT',%s,1,NULL,NULL,'非固定业务',%s,%s)''',(business_id,title,max(1,duration),biz['manager_admin_id'] if biz else None))
+        biz=one(c,'SELECT total_manager_admin_id FROM business WHERE business_id=%s',(business_id,))
+        c.execute('''INSERT INTO service_slot(business_id,schedule_kind,team_name,period_no,start_time,end_time,service_minutes,manager_admin_id)
+            VALUES(%s,'EVENT',%s,1,NULL,NULL,%s,%s)''',(business_id,title,max(1,duration),biz['total_manager_admin_id'] if biz else None))
         return c.lastrowid
 
     def _event_record(self,c,student_id,business_id,title,day,duration,admin_id,source,key,recognize=True):
@@ -133,9 +135,9 @@ class BusinessWorkflows(SubmissionWorkflow):
         slot=self._event_slot(c,business_id,title,duration)
         # The base ledger permits one active occurrence per student/slot/date. Separate source occurrences get distinct event slots.
         if one(c,"SELECT 1 FROM schedule WHERE student_id=%s AND slot_id=%s AND schedule_date=%s AND status IN ('ACTIVE','COMPLETED')",(student_id,slot,day)):
-            mgr=one(c,'SELECT manager_admin_id FROM business WHERE business_id=%s',(business_id,))
-            c.execute('''INSERT INTO service_slot(business_id,schedule_kind,team_name,period_no,start_time,end_time,location,service_minutes,manager_admin_id)
-                VALUES(%s,'EVENT',%s,1,NULL,NULL,'非固定业务',%s,%s)''',(business_id,title,max(1,duration),mgr['manager_admin_id'] if mgr else None));slot=c.lastrowid
+            mgr=one(c,'SELECT total_manager_admin_id FROM business WHERE business_id=%s',(business_id,))
+            c.execute('''INSERT INTO service_slot(business_id,schedule_kind,team_name,period_no,start_time,end_time,service_minutes,manager_admin_id)
+                VALUES(%s,'EVENT',%s,1,NULL,NULL,%s,%s)''',(business_id,title,max(1,duration),mgr['total_manager_admin_id'] if mgr else None));slot=c.lastrowid
         term=one(c,'SELECT * FROM semester WHERE start_date<=%s AND end_date>=%s',(day,day))
         week=(day-monday(term['start_date'])).days//7+1 if term else None
         c.execute('''INSERT INTO schedule(student_id,slot_id,admin_id,schedule_date,semester_id,week_no,recognition_minutes,source_key)
@@ -163,7 +165,7 @@ class BusinessWorkflows(SubmissionWorkflow):
             require(b and b['kind']=='EVENT','请选择非固定业务',422)
             self._active_business(c,business_id)
             if group_id is not None:self._group(c,business_id,group_id)
-            self._collection_scope(c,a,business_id,group_id)
+            self._collection_scope(c,a,business_id,group_id,start,end)
             if group_id is not None:require(set(student_ids)<=self._group_people(c,group_id),'参与人员必须属于所选小组',403)
             if a['_role']=='NORMAL':
                 allowed={p['student_id'] for p in self.collection_participants(actor,business_id if group_id else None,group_id=group_id)}
@@ -183,22 +185,23 @@ class BusinessWorkflows(SubmissionWorkflow):
                           (cid,f['filename'],f['mime_type'],f['size_bytes'],f['content']))
             self.audit(c,a['_id'],'CREATE_COLLECTION','hour_collection',cid,after={'title':title,'student_ids':sorted(set(student_ids)),'items':items,
                 'attachments':[{'filename':f['filename'],'size_bytes':f['size_bytes']} for f in files]})
-            recipients=[('student',sid) for sid in set(student_ids)]+self._super_recipients(c)+[('admin',m['admin_id']) for m in self._collection_admins(c,business_id,group_id)]
-            self._notice(c,recipients,f'collection-published:{cid}','COLLECTION','新的时长征集已发布',title+'：请查看工作事项和申报截止日期。','collections',cid)
+            recipients=[('student',sid) for sid in set(student_ids)]+self._super_recipients(c)+[('admin',m['admin_id']) for m in self._collection_admins(c,business_id,group_id,start,end)]
+            self._notice(c,recipients,f'collection-published:{cid}','COLLECTION','新的时长征集已发布',title,'collections',cid)
             return {'collection_id':cid}
 
     def collections(self,actor):
         with self.db.transaction() as c:
             a=self.actor(c,actor,('SUPER','NORMAL','STUDENT'))
-            sql='SELECT h.*,b.name AS business_name,g.name AS group_name FROM hour_collection h JOIN business b ON b.business_id=h.business_id LEFT JOIN business_group g ON g.group_id=h.group_id';args=()
+            sql='SELECT h.*,b.name AS business_name,g.name AS group_name,b.total_manager_admin_id FROM hour_collection h JOIN business b ON b.business_id=h.business_id LEFT JOIN business_group g ON g.group_id=h.group_id';args=()
             if a['_role']=='STUDENT': sql+=' WHERE EXISTS(SELECT 1 FROM collection_person p WHERE p.collection_id=h.collection_id AND p.student_id=%s)';args=(a['_id'],)
-            if a['_role']=='NORMAL': sql+=' WHERE (EXISTS(SELECT 1 FROM collection_manager m WHERE m.business_id=h.business_id AND m.admin_id=%s) OR EXISTS(SELECT 1 FROM collection_group_manager m WHERE m.group_id=h.group_id AND m.admin_id=%s))';args=(a['_id'],a['_id'])
+            if a['_role']=='NORMAL': sql+=' WHERE b.total_manager_admin_id=%s';args=(a['_id'],)
             rows=list(all_rows(c,sql+' ORDER BY h.collection_id DESC',args))
             for r in rows:
+                is_owner=a['_role']=='SUPER' or a['_role']=='NORMAL' and r.get('total_manager_admin_id')==a['_id']
                 r['can_submit']=a['_role']=='STUDENT' and self._collection_open(r) and a['status']=='ACTIVE'
-                r['can_manage']=a['_role'] in ('NORMAL','SUPER')
+                r['can_manage']=is_owner
                 r['effective_status']='OPEN' if self._collection_open(r) else 'CLOSED'
-                managers=self._collection_admins(c,r['business_id'],r.get('group_id'))
+                managers=self._collection_admins(c,r['business_id'],r.get('group_id'),r['start_date'],r['end_date'])
                 r['attachments']=all_rows(c,'SELECT attachment_id,filename,mime_type,size_bytes FROM collection_attachment WHERE collection_id=%s ORDER BY attachment_id',(r['collection_id'],))
                 r['items']=all_rows(c,'SELECT * FROM collection_item WHERE collection_id=%s',(r['collection_id'],))
                 r['submissions']=all_rows(c,'''SELECT s.*,st.name,i.title AS item_title FROM hour_submission s
@@ -207,8 +210,8 @@ class BusinessWorkflows(SubmissionWorkflow):
                 for sub in r['submissions']:
                     sub['attachments']=all_rows(c,'SELECT attachment_id,filename,mime_type,size_bytes FROM submission_attachment WHERE submission_id=%s AND submission_revision=%s ORDER BY attachment_id',(sub['submission_id'],sub['attachment_revision']))
                     sub['reviews']=all_rows(c,'SELECT r.review_id,r.revision,r.stage,r.approved,r.service_minutes,r.reason,r.created_at,a.name AS admin_name FROM submission_review r JOIN admin a ON a.admin_id=r.admin_id WHERE submission_id=%s ORDER BY r.revision',(sub['submission_id'],))
-                    sub['can_review']=a['_role']=='NORMAL' and sub['status']=='PENDING' or a['_role']=='SUPER' and (sub['status']=='FIRST_APPROVED' or sub['status']=='PENDING' and not managers)
-                    sub['can_correct']=a['_role']=='SUPER' and sub['status'] in ('APPROVED','REJECTED')
+                    sub['can_review']=is_owner and sub['status']=='PENDING'
+                    sub['can_correct']=is_owner and sub['status'] in ('APPROVED','REJECTED')
             return rows
 
     def create_event(self,actor,business_name,student_id,title,service_date,service_minutes,reason,request_key):
@@ -298,8 +301,11 @@ class BusinessWorkflows(SubmissionWorkflow):
         if not multi:return self._legacy_approve_leave(actor,leave_id,approved)
         if not approved:reason=reason_text(reason)
         with self.db.transaction(True) as c:
-            a=self.actor(c,actor,('NORMAL',));app=one(c,'SELECT * FROM leave_application WHERE leave_id=%s FOR UPDATE',(leave_id,))
-            require(app,'申请不存在',404);row=self.schedule(c,app['schedule_id']);self.scope(a,row,True)
+            a=self.actor(c,actor,('NORMAL','SUPER'));app=one(c,'SELECT * FROM leave_application WHERE leave_id=%s FOR UPDATE',(leave_id,))
+            require(app,'申请不存在',404);row=self.schedule(c,app['schedule_id'])
+            if a['_role']=='NORMAL':
+                self.scope(a,row,True)
+            # 超级管理员可兜底审核任意待处理请假申请。
             desired='APPROVED' if approved else 'REJECTED'
             if app['approve_status']==desired:return {'replayed':True,'status':desired}
             require(app['approve_status']=='PENDING','申请已处理');self.future_schedule(row)

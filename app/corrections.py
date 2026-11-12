@@ -78,7 +78,7 @@ class CorrectionService:
         reason = reason_text(reason)
         require(status in ('NORMAL','LATE','ABSENT','LEAVE'), '考勤状态无效', 422)
         with self.db.transaction(True) as c:
-            a = self.actor(c, actor, ('NORMAL','SUPER','LEAD'))
+            a = self.actor(c, actor, ('NORMAL','SUPER'))
             row = self.schedule(c, schedule_id)
             self.scope(a, row)
             self.attendance_kind_guard(row,status)

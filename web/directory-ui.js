@@ -2,32 +2,33 @@
 // 按业务逻辑分组：排班服务、时长与信用、队员与业务（操作日志独立）
 const navGroups=[
   ['schedule','排班服务',['semesters','schedules','applications']],
-  ['hours','时长与信用',['collections','specialty','hours','credit']],
-  ['org','队员与业务',['basics','businesses','leaders','collection-management','members']]
+  ['hours','时长与信用',['collections','hours','credit']],
+  ['org','队员与业务',['basics','businesses','members']]
 ];
 function navigationHtml(available){
  let saved={};try{saved=JSON.parse(localStorage.getItem('nav-folds-'+state.role)||'{}');}catch{}
- const link=([id,title])=>{const navIcon=id==='overview'?'home':id==='inbox'?'inbox':'';return `<button class="nav-link ${state.page===id?'active':''}" data-page="${id}" ${state.page===id?'aria-current="page"':''}>${navIcon?uiIcon(navIcon):''}${title}${id==='inbox'?'<span class="badge pending" data-inbox-count hidden></span>':''}</button>`;};
+ const groupTitle=(id,title)=>({STUDENT:{schedule:'我的服务',hours:'我的时长与信用',org:'我的组织'},NORMAL:{schedule:'排班与审批',hours:'时长与征集',org:'业务与队员'}}[state.role]?.[id])||title;
+ const link=([id,title])=>{const navIcon=id==='overview'?'home':id==='inbox'?'inbox':'';return `<button class="nav-link ${state.page===id?'active':''}" data-page="${id}" ${state.page===id?'aria-current="page"':''}>${navIcon?uiIcon(navIcon):''}${navLabel([id,title])}${id==='inbox'?'<span class="badge pending" data-inbox-count hidden></span>':''}</button>`;};
  const pinnedLinks = ['overview','inbox'].map(id=>available.find(n=>n[0]===id)).filter(Boolean).map(link).join('');
  const groupsHtml = navGroups.map(([id,title,items])=>{
   const children=items.map(k=>available.find(n=>n[0]===k)).filter(Boolean);if(!children.length)return '';
   const open=items.includes(state.page)||saved[id]===true;
-  return `<div class="nav-group"><button class="nav-group-toggle" data-action="nav-toggle" data-id="${id}" aria-expanded="${open}" aria-controls="nav-${id}">${title}<span class="nav-caret" aria-hidden="true">${uiIcon('chevron-down')}</span></button><div id="nav-${id}" class="nav-children" ${open?'':'hidden'}>${children.map(link).join('')}</div></div>`;
+  return `<div class="nav-group"><button class="nav-group-toggle" data-action="nav-toggle" data-id="${id}" aria-expanded="${open}" aria-controls="nav-${id}">${groupTitle(id,title)}<span class="nav-caret" aria-hidden="true">${uiIcon('chevron-down')}</span></button><div id="nav-${id}" class="nav-children" ${open?'':'hidden'}>${children.map(link).join('')}</div></div>`;
  }).join('');
  // 操作日志独立在最底部
  const logsPage = available.find(n=>n[0]==='logs');
- const logsLink = logsPage ? `<div class="nav-separator"></div><button class="nav-link nav-link-plain ${state.page===logsPage[0]?'active':''}" data-page="${logsPage[0]}">${logsPage[1]}</button>` : '';
+ const logsLink = logsPage ? `<div class="nav-separator"></div><button class="nav-link nav-link-plain ${state.page===logsPage[0]?'active':''}" data-page="${logsPage[0]}">${navLabel(logsPage)}</button>` : '';
  return pinnedLinks + groupsHtml + logsLink;
 }
-function updateNavigation(){const el=document.querySelector('.nav-list');if(el){el.innerHTML=navigationHtml(nav.filter(n=>n[2].includes(state.role)));updateInboxBadge();}}
+function updateNavigation(){const el=document.querySelector('.nav-list');if(el){el.innerHTML=navigationHtml(navAvailable());updateInboxBadge();}}
 function toggleNavGroup(id){let saved={};try{saved=JSON.parse(localStorage.getItem('nav-folds-'+state.role)||'{}');}catch{}const el=document.querySelector(`[data-action="nav-toggle"][data-id="${id}"]`);const open=el.getAttribute('aria-expanded')!=='true';saved[id]=open;localStorage.setItem('nav-folds-'+state.role,JSON.stringify(saved));el.setAttribute('aria-expanded',String(open));document.getElementById('nav-'+id).hidden=!open;}
 const activeBusinesses=()=> (state.data.businesses||[]).filter(b=>b.status!=='ARCHIVED');
-function groupFilter(value=state.groupId){return `<div class="field group-filter"><label for="group-filter">小组</label><select id="group-filter" name="group_id"><option value="">全部小组</option><option value="0" ${String(value)==='0'?'selected':''}>未分组</option>${(state.data.groups||[]).filter(g=>!state.businessId||String(g.business_id)===String(state.businessId)).map(g=>`<option value="${g.group_id}" ${String(value)===String(g.group_id)?'selected':''}>${esc(g.name)}</option>`).join('')}</select></div>`;}
+function groupFilter(value=state.groupId){return '';}
 function slotFields(prefix=''){
  const admins=(state.data.admins||[]).filter(a=>a.role==='NORMAL'&&a.status==='ACTIVE');
- return field(prefix+'weekday','星期',{options:[1,2,3,4,5,6,7].map(d=>[d,'周'+'一二三四五六日'[d-1]])})+field(prefix+'period_no','时段编号',{type:'number',min:1,max:100,step:1})+field(prefix+'start_time','开始时间',{type:'time'})+field(prefix+'end_time','结束时间',{type:'time'})+field(prefix+'service_minutes','认定分钟',{type:'number',min:1,max:1440,step:1})+field(prefix+'need_num','容量',{type:'number',min:1,max:10000,step:1})+field(prefix+'manager_admin_id','时段管理员',{options:admins.map(a=>[a.admin_id,`${a.name}（${a.account}）`]),full:true})+field(prefix+'location','服务地点',{required:false,full:true,maxLength:200});
+ return field(prefix+'weekday','星期',{options:[1,2,3,4,5,6,7].map(d=>[d,'周'+'一二三四五六日'[d-1]])})+field(prefix+'period_no','时段编号',{type:'number',min:1,max:100,step:1})+field(prefix+'start_time','开始时间',{type:'time'})+field(prefix+'end_time','结束时间',{type:'time'})+field(prefix+'service_minutes','认定分钟',{type:'number',min:1,max:1440,step:1})+field(prefix+'need_num','建议人数',{type:'number',min:1,max:10000,step:1})+field(prefix+'manager_admin_id','时段管理员',{options:admins.map(a=>[a.admin_id,`${a.name}（${a.account}）`]),full:true});
 }
-function slotValues(v,prefix=''){const x={};for(const k of ['weekday','period_no','service_minutes','need_num','manager_admin_id'])x[k]=Number(v[prefix+k]);for(const k of ['start_time','end_time','location'])x[k]=v[prefix+k]||'';return x;}
+function slotValues(v,prefix=''){const x={};for(const k of ['weekday','period_no','service_minutes','need_num','manager_admin_id'])x[k]=Number(v[prefix+k]);for(const k of ['start_time','end_time'])x[k]=v[prefix+k]||'';return x;}
 function scrollableDialog(){dialog.classList.add('collection-dialog');dialog.addEventListener('close',()=>dialog.classList.remove('collection-dialog'),{once:true});}
 function openBusinessCreate(){
  openDialog('新增业务','固定排班业务沿用学期日历和默认出勤结算，启用前不补计时长。',field('name','业务名称',{full:true,maxLength:100})+field('kind','业务类型',{options:[['EVENT','非固定业务（时长征集 / 临时服务）'],['FIXED','固定排班业务']],full:true})+'<div class="field full" id="new-business-slots" hidden><div id="new-slot-rows"></div><button class="btn" type="button" id="add-slot-row">添加时段</button></div>',v=>{
@@ -65,4 +66,4 @@ function openMemberImport(preset){
  openImportDialog(preset&&preset.group_id?'GROUP':'BUSINESS',preset&&preset.group_id?Number(preset.group_id):null);
 }
 
-document.addEventListener('change',e=>{if(e.target.id==='group-filter'){state.groupId=e.target.value;hoursPage();}if(e.target.id==='business-filter'){state.groupId='';}});
+document.addEventListener('change',e=>{if(e.target.id==='business-filter'){state.groupId='';}});

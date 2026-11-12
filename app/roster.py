@@ -26,19 +26,22 @@ def category_slot(value):
     return None
 
 
-def parse_workbook(encoded, sheet_name=None, map_categories=True, force_pair=None):
+def parse_workbook(encoded, sheet_name=None, map_categories=True, force_pair=None,
+                   business_name=None):
     """Preview a fixed-business roster.
 
     ``force_pair`` = (weekday, period_no) pins every row to one slot: the
     「分类 / 时段」column is ignored, which is what a third-level
     「导入本班次」 does. Rows with unusable values are skipped instead of
-    failing the whole workbook.
+    failing the whole workbook.  Any 「业务」column is ignored: every row with
+    学号 and 姓名 belongs to the scope chosen by the caller.
     """
     raw = decode(encoded)
     sheets, rows = read_sheets(raw, sheet_name)
     chosen = sheet_name or (sheets[0]['name'] if sheets else '')
     warnings = []
     skipped = []
+    source_rows = len(rows)
     people = merge_people(rows)
     slot_of = {}
     for row in rows:
@@ -82,7 +85,9 @@ def parse_workbook(encoded, sheet_name=None, map_categories=True, force_pair=Non
                          'rows': person['rows'], 'keys': person['keys'], 'names': person['names'],
                          'sheets': person['sheets']})
     return {'sheets': [s['name'] for s in sheets], 'sheet': chosen,
-            'source_rows': len(rows), 'unique_students': len(students),
+            'source_rows': len(rows), 'source_rows_total': source_rows,
+            'unique_students': len(students),
             'memberships': sum(len(p['slots']) for p in students),
             'students': students, 'warnings': warnings, 'errors': [], 'skipped': skipped,
-            'people': students, 'force_pair': force_pair}
+            'people': students, 'force_pair': force_pair,
+            'business_name': business_name}

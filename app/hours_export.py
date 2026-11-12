@@ -11,7 +11,7 @@ from .db import one, all_rows
 def export_hours(service, actor, semester_id, business_id=None, group_id=None):
     from .service import require
     with service.db.transaction() as c:
-        viewer=service.actor(c, actor, ('SUPER','LEAD'))
+        viewer=service.actor(c, actor, ('SUPER','NORMAL'))
         term = one(c, 'SELECT * FROM semester WHERE semester_id=%s', (semester_id,))
         require(term, '学期不存在', 404)
         students = all_rows(c, 'SELECT student_id,name,college,status FROM student ORDER BY student_id')
@@ -27,7 +27,7 @@ def export_hours(service, actor, semester_id, business_id=None, group_id=None):
             WHERE r.record_status='VALID' AND s.schedule_date BETWEEN %s AND %s
             ORDER BY s.schedule_id,r.record_id''', (term['start_date'], term['end_date']))
         group_names={r['group_id']:r['name'] for r in all_rows(c,'SELECT * FROM business_group')} if multi else {}
-        if viewer['_role']=='LEAD':
+        if viewer['_role']=='NORMAL':
             allowed=set(viewer['_lead_slots'])
             slots=[r for r in slots if r['slot_id'] in allowed]
             memberships=[r for r in memberships if r['slot_id'] in allowed]

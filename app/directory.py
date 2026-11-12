@@ -31,8 +31,11 @@ class DirectoryManagement(MemberImport,InboxService):
         require(kind=='FIXED' or not slots,'非固定业务不配置每周时段',422)
         with self.db.transaction(True) as c:
             a=self.actor(c,actor,('SUPER',));require(not one(c,'SELECT 1 FROM business WHERE name=%s',(name,)),'业务已存在（含归档业务），请勿重复创建',409)
-            c.execute('INSERT INTO business(name,kind,manager_scope) VALUES(%s,%s,%s)',(name,kind,'SLOT' if kind=='FIXED' else 'NONE'));bid=c.lastrowid
+            c.execute('INSERT INTO business(name,kind) VALUES(%s,%s)',(name,kind));bid=c.lastrowid
             c.execute('INSERT INTO business_window(business_id,active_from) VALUES(%s,%s)',(bid,self.clock()))
+            if kind=='EVENT':
+                from .leaders import ensure_event_scopes
+                ensure_event_scopes(c,bid)
             for slot in slots or []:self._add_business_slot(c,bid,slot)
             self.audit(c,a['_id'],'CREATE_BUSINESS','business',bid,after={'name':name,'kind':kind,'slots':slots or []})
             return {'business_id':bid}
@@ -42,12 +45,12 @@ class DirectoryManagement(MemberImport,InboxService):
         b=self._active_business(c,bid);require(b['kind']=='FIXED','只支持固定排班业务',422)
         day,period=slot['weekday'],slot['period_no'];start,end=time.fromisoformat(str(slot['start_time'])),time.fromisoformat(str(slot['end_time']))
         require(1<=day<=7 and 1<=period<=100 and minutes(start)<minutes(end),'星期、时段编号或起止时间无效；不支持跨日',422)
-        require(1<=slot['service_minutes']<=1440 and 1<=slot['need_num']<=10000,'认定分钟或容量无效',422)
+        require(1<=slot['service_minutes']<=1440 and 1<=slot['need_num']<=10000,'认定分钟或建议人数无效',422)
         self.actor(c,{'kind':'admin','id':slot['manager_admin_id']},('NORMAL',))
-        others=all_rows(c,"SELECT * FROM service_slot WHERE business_id=%s AND weekday=%s AND status='ACTIVE'",(bid,day))
+        others=all_rows(c,"SELECT * FROM service_slot WHERE business_id=%s AND weekday=%s",(bid,day))
         require(not any(r['period_no']==period or minutes(r['start_time'])<minutes(end) and minutes(start)<minutes(r['end_time']) for r in others),'时段编号重复或业务内时间重叠',422)
-        c.execute('''INSERT INTO service_slot(business_id,schedule_kind,team_name,weekday,period_no,start_time,end_time,location,need_num,service_minutes,manager_admin_id)
-          VALUES(%s,'FIXED',%s,%s,%s,%s,%s,%s,%s,%s,%s)''',(bid,f'{b["name"]} · 周{"一二三四五六日"[day-1]}第{period}时段',day,period,start,end,slot.get('location') or b['name'],slot['need_num'],slot['service_minutes'],slot['manager_admin_id']))
+        c.execute('''INSERT INTO service_slot(business_id,schedule_kind,team_name,weekday,period_no,start_time,end_time,need_num,service_minutes,manager_admin_id)
+          VALUES(%s,'FIXED',%s,%s,%s,%s,%s,%s,%s,%s)''',(bid,f'{b["name"]} · 周{"一二三四五六日"[day-1]}第{period}时段',day,period,start,end,slot['need_num'],slot['service_minutes'],slot['manager_admin_id']))
         return c.lastrowid
 
     def add_business_slot(self,actor,business_id,**slot):
@@ -80,16 +83,15 @@ class DirectoryManagement(MemberImport,InboxService):
             if slots.intersection(json.loads(r['slot_ids'])):blockers.append({'kind':'待生效归属调整','id':r['change_id']})
         for r in all_rows(c,"SELECT collection_id,title FROM hour_collection WHERE business_id=%s AND status='OPEN'",(bid,)):blockers.append({'kind':'开放征集','id':r['collection_id'],'label':r['title']})
         for r in all_rows(c,"""SELECT s.submission_id FROM hour_submission s JOIN collection_item i ON i.item_id=s.item_id
-          JOIN hour_collection h ON h.collection_id=i.collection_id WHERE h.business_id=%s AND s.status IN ('PENDING','FIRST_APPROVED')""",(bid,)):blockers.append({'kind':'待审核申报','id':r['submission_id']})
+          JOIN hour_collection h ON h.collection_id=i.collection_id WHERE h.business_id=%s AND s.status='PENDING'""",(bid,)):blockers.append({'kind':'待审核申报','id':r['submission_id']})
         for r in all_rows(c,"""SELECT p.leave_id FROM leave_application p JOIN schedule s ON s.schedule_id=p.schedule_id
           JOIN service_slot t ON t.slot_id=s.slot_id WHERE t.business_id=%s AND p.approve_status='PENDING'""",(bid,)):blockers.append({'kind':'待审批请假','id':r['leave_id']})
         for r in all_rows(c,"""SELECT p.transfer_id FROM transfer_application p JOIN service_slot old ON old.slot_id=p.old_slot_id
           JOIN service_slot new ON new.slot_id=p.new_slot_id WHERE (old.business_id=%s OR new.business_id=%s)
-          AND p.final_status='PENDING' AND p.first_status IN ('PENDING','APPROVED')""",(bid,bid)):blockers.append({'kind':'待审批换班','id':r['transfer_id']})
+          AND p.final_status='PENDING'""",(bid,bid)):blockers.append({'kind':'待审批换班','id':r['transfer_id']})
         for r in all_rows(c,"""SELECT DISTINCT p.withdrawal_id FROM withdrawal_application p WHERE p.approve_status='PENDING' AND
           (EXISTS(SELECT 1 FROM slot_member m JOIN service_slot t ON t.slot_id=m.slot_id WHERE m.student_id=p.student_id AND t.business_id=%s)
           OR EXISTS(SELECT 1 FROM business_member m WHERE m.student_id=p.student_id AND m.business_id=%s AND m.effective_from<=%s AND (m.effective_until IS NULL OR m.effective_until>%s)))""",(bid,bid,self.clock().date(),self.clock().date())):blockers.append({'kind':'待审批退队','id':r['withdrawal_id']})
-        for r in all_rows(c,"SELECT request_id FROM collection_scope_request WHERE business_id=%s AND status='PENDING'",(bid,)):blockers.append({'kind':'待审批管理范围','id':r['request_id']})
         rows=all_rows(c,"SELECT s.*,t.schedule_kind,t.start_time FROM schedule s JOIN service_slot t ON t.slot_id=s.slot_id WHERE t.business_id=%s AND s.status='ACTIVE'",(bid,))
         future=[r for r in rows if self._not_started(r)]
         return {'blockers':blockers,'future_count':len(future),'future_schedules':future}
@@ -143,7 +145,7 @@ class DirectoryManagement(MemberImport,InboxService):
             require(b['kind']=='FIXED','只有固定业务可以按分队设置负责人',422)
             if manager_admin_id is not None:
                 require(one(c,"SELECT admin_id FROM admin WHERE admin_id=%s AND role='NORMAL' AND status='ACTIVE'",(manager_admin_id,)),'负责人须为有效普通管理员',422)
-            ids=[r['slot_id'] for r in all_rows(c,"SELECT slot_id FROM service_slot WHERE business_id=%s AND weekday=%s AND status='ACTIVE'",(business_id,weekday))]
+            ids=[r['slot_id'] for r in all_rows(c,"SELECT slot_id FROM service_slot WHERE business_id=%s AND weekday=%s",(business_id,weekday))]
             require(ids,'该分队没有可设置的时段',422)
             marks=','.join(['%s']*len(ids))
             c.execute(f'UPDATE service_slot SET manager_admin_id=%s WHERE slot_id IN ({marks})',[manager_admin_id]+ids)
@@ -166,14 +168,23 @@ class DirectoryManagement(MemberImport,InboxService):
 
     def business_groups(self,actor,business_id=None):
         with self.db.transaction() as c:
-            a=self.actor(c,actor);sql='SELECT g.*,b.name AS business_name,b.status AS business_status FROM business_group g JOIN business b ON b.business_id=g.business_id';args=[]
+            a=self.actor(c,actor,('SUPER','NORMAL'));sql='SELECT g.*,b.name AS business_name,b.status AS business_status FROM business_group g JOIN business b ON b.business_id=g.business_id';args=[]
             if business_id:sql+=' WHERE g.business_id=%s';args.append(business_id)
             rows=list(all_rows(c,sql+' ORDER BY g.group_id',args))
+            led=self._leader_businesses(c,a['_id']) if a['_role']=='NORMAL' else {}
+            if a['_role']=='NORMAL':
+                from .service import business_owner_available,business_link_available
+                allowed=set(led)
+                slot_ids={int(s) for s in (a.get('_lead_slots') or [])}
+                slot_ids|={int(s['slot_id']) for s in all_rows(c,'SELECT slot_id FROM service_slot WHERE manager_admin_id=%s',(a['_id'],))}
+                if slot_ids and business_link_available(c):
+                    allowed|={int(r['business_id']) for r in all_rows(c,'SELECT DISTINCT business_id FROM service_slot WHERE slot_id IN ('+','.join(['%s']*len(slot_ids))+')',tuple(sorted(slot_ids)))}
+                if business_owner_available(c):
+                    allowed|={int(r['business_id']) for r in all_rows(c,'SELECT business_id FROM business WHERE total_manager_admin_id=%s',(a['_id'],))}
+                rows=[r for r in rows if int(r['business_id']) in allowed]
             for r in rows:
                 r['can_manage']=a['_role']=='SUPER' or a['_role']=='NORMAL' and bool(
-                    one(c,'SELECT 1 FROM business WHERE business_id=%s AND total_manager_admin_id=%s',(r['business_id'],a['_id']))
-                    or one(c,'SELECT 1 FROM collection_manager WHERE admin_id=%s AND business_id=%s',(a['_id'],r['business_id']))
-                    or one(c,'SELECT 1 FROM collection_group_manager WHERE admin_id=%s AND group_id=%s',(a['_id'],r['group_id'])))
+                    one(c,'SELECT 1 FROM business WHERE business_id=%s AND total_manager_admin_id=%s',(r['business_id'],a['_id']))) or r['business_id'] in led
                 r['member_count']=len(self._group_people(c,r['group_id']))
             return rows
 

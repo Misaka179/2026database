@@ -30,6 +30,23 @@ class UnifiedImportTests(unittest.TestCase):
             self.assertEqual(slots, [self.art])
         self.assertGreater(self.s.member_import_list(self.sup, self.b['ART']['business_id'])['batches'][0]['batch_id'], 0)
 
+    def test_slot_scope_import_ignores_suggested_number(self):
+        # 建议人数只是展示值，导入不按它限制人数
+        with self.db.transaction(True) as c:
+            c.execute('UPDATE service_slot SET need_num=1 WHERE slot_id=%s',(self.art,))
+        book = fixture([['建议甲', '0012300000011', '', ''],
+                        ['建议乙', '0012300000012', '', ''],
+                        ['建议丙', '0012300000013', '', '']])
+        preview = self.s.import_roster(self.sup, book, business_id=self.b['ART']['business_id'],
+                                       slot_id=self.art)
+        self.assertFalse(preview['errors'])
+        self.assertEqual(preview['memberships'], 3)
+        result = self.s.import_roster(self.sup, book, business_id=self.b['ART']['business_id'],
+                                      slot_id=self.art, commit=True, initial_password='ImportTest123!')
+        self.assertEqual(result['added_memberships'], 3)
+        count = self.rows('SELECT COUNT(*) AS n FROM slot_member WHERE slot_id=%s', (self.art,))[0]['n']
+        self.assertEqual(count, 3)
+
     def test_name_mismatch_is_pending_and_approved_import_keeps_stored_name(self):
         book = fixture([['张三改', self.sid, '', '一分队三时段']])
         preview = self.s.import_roster(self.sup, book, business_id=self.b['ART']['business_id'])
@@ -85,9 +102,28 @@ class UnifiedImportTests(unittest.TestCase):
         self.assertEqual(batch['scope_kind'], 'GROUP')
         self.assertEqual(batch['scope_id'], gid)
         revert = self.s.revert_member_import(self.sup, result['batch_id'])
-        self.assertEqual(revert['removed_memberships'], 1)
+        self.assertEqual(revert['removed_memberships'], 2)
         self.assertEqual(self.rows('SELECT 1 AS n FROM group_member WHERE group_id=%s AND student_id=%s',
                                    (gid, '0012300000004')), [])
+        self.assertEqual(self.rows('SELECT 1 AS n FROM business_member WHERE business_id=%s AND student_id=%s',
+                                   (bid, '0012300000004')), [])
+
+    def test_business_column_is_ignored_and_all_rows_import(self):
+        import base64
+        from openpyxl import Workbook
+        from io import BytesIO
+        book = Workbook(); sheet = book.active; sheet.title = '混合名单'
+        sheet.append(['业务', '姓名', '学号', '学院', '分类'])
+        sheet.append(['美育', '甲', '0012300000011', '测试学院', '一分队一时段'])
+        sheet.append(['咨询服务', '乙', '0012300000012', '测试学院', '一分队一时段'])
+        sheet.append(['美育', '丙', '0012300000013', '测试学院', '一分队二时段'])
+        stream = BytesIO(); book.save(stream)
+        encoded = base64.b64encode(stream.getvalue()).decode()
+        preview = self.s.import_roster(self.sup, encoded, business_id=self.b['ART']['business_id'])
+        self.assertEqual(preview['unique_students'], 3)
+        self.assertEqual({p['student_id'] for p in preview['students']},
+                         {'0012300000011', '0012300000012', '0012300000013'})
+        self.assertFalse([e for e in preview['errors'] if '咨询服务' in e.get('message', '')])
 
     def _member_book(self, rows):
         import base64

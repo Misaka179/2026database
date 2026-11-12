@@ -13,14 +13,23 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
         rows=self._legacy_students(actor,student_id)
         with self.db.transaction() as c:
             if not installed(c):return rows
+            today=self.clock().date()
             links=all_rows(c,'''SELECT DISTINCT m.student_id,t.business_id FROM slot_member m JOIN service_slot t ON t.slot_id=m.slot_id
-                UNION SELECT student_id,business_id FROM business_member WHERE effective_from<=%s AND (effective_until IS NULL OR effective_until>%s)''',(self.clock().date(),self.clock().date()))
+                UNION SELECT student_id,business_id FROM business_member WHERE effective_from<=%s AND (effective_until IS NULL OR effective_until>%s)''',(today,today))
+            direct=all_rows(c,'''SELECT student_id,business_id FROM business_member
+                WHERE effective_from<=%s AND (effective_until IS NULL OR effective_until>%s)''',(today,today))
             by_id={r['student_id']:r for r in rows}
-            for r in rows:r['business_ids']=[]
+            for r in rows:
+                r['business_ids']=[]
+                r['business_member_ids']=[]
             for link in links:
-                if link['student_id'] in by_id:by_id[link['student_id']]['business_ids'].append(link['business_id'])
+                if link['student_id'] in by_id:
+                    values=by_id[link['student_id']]['business_ids']
+                    if link['business_id'] not in values:values.append(link['business_id'])
+            for link in direct:
+                if link['student_id'] in by_id:by_id[link['student_id']]['business_member_ids'].append(link['business_id'])
             group_links=all_rows(c,'''SELECT m.student_id,g.group_id,g.business_id,g.name FROM group_member m JOIN business_group g ON g.group_id=m.group_id
-                WHERE m.effective_from<=%s AND (m.effective_until IS NULL OR m.effective_until>%s)''',(self.clock().date(),self.clock().date()))
+                WHERE m.effective_from<=%s AND (m.effective_until IS NULL OR m.effective_until>%s)''',(today,today))
             for r in rows:r['groups']=[]
             for link in group_links:
                 if link['student_id'] in by_id:by_id[link['student_id']]['groups'].append(link)
@@ -28,27 +37,35 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
 
     def businesses(self, actor):
         with self.db.transaction() as c:
-            a = self.actor(c,actor)
+            a = self.actor(c,actor,('SUPER','NORMAL'))
             if not installed(c): return []
             rows = list(all_rows(c,'SELECT * FROM business ORDER BY business_id'))
             from .leaders import installed as leaders_installed
             names={r['admin_id']:r['name'] for r in all_rows(c,'SELECT admin_id,name FROM admin')}
             scopes={}
             if leaders_installed(c):
-                for g in all_rows(c,'''SELECT g.scope_id,g.business_id,g.weekday,g.admin_id,a.leader_student_id
+                for g in all_rows(c,'''SELECT g.scope_id,g.business_id,g.weekday,g.admin_id
                     FROM leader_scope g LEFT JOIN admin a ON a.admin_id=g.admin_id
                     WHERE g.business_id IS NOT NULL AND g.active=1 AND g.weekday IS NOT NULL ORDER BY g.weekday'''):
                     scopes.setdefault(g['business_id'],[]).append(
                         {'scope_id':g['scope_id'],'weekday':g['weekday'],'admin_id':g['admin_id'],
-                         'student_id':g['leader_student_id'],'admin_name':names.get(g['admin_id'])})
-            from .collection_governance_schema import installed as governance_installed
-            collect_ids={r['business_id'] for r in all_rows(c,'SELECT business_id FROM collection_manager WHERE admin_id=%s',(a['_id'],))} if a['_role']=='NORMAL' and governance_installed(c) else set()
+                         'admin_name':names.get(g['admin_id'])})
+            led=self._leader_businesses(c,a['_id']) if a['_role']=='NORMAL' else {}
+            if a['_role']=='NORMAL':
+                slot_businesses={r['business_id'] for r in all_rows(c,
+                    'SELECT DISTINCT business_id FROM service_slot WHERE manager_admin_id=%s',(a['_id'],))}
+                allowed=slot_businesses|set(led)
+                rows=[row for row in rows
+                      if row['business_id'] in allowed
+                      or row.get('total_manager_admin_id')==a['_id']]
             for row in rows:
                 row['total_manager_name']=names.get(row.get('total_manager_admin_id'))
                 row['leaders']=scopes.get(row['business_id'],[])
-                row['can_collect_all']=a['_role']=='SUPER' or row.get('total_manager_admin_id')==a['_id'] or row['business_id'] in collect_ids
-                row['can_collect']=row['can_collect_all'] or a['_role']=='NORMAL' and bool(one(c,'SELECT 1 FROM collection_group_manager m JOIN business_group g ON g.group_id=m.group_id WHERE m.admin_id=%s AND g.business_id=%s',(a['_id'],row['business_id'])))
-                row['can_manage'] = a['_role']=='SUPER' or a['_role']=='NORMAL' and (row['total_manager_admin_id']==a['_id'] or row['manager_admin_id']==a['_id'])
+                row['can_collect_all']=a['_role']=='SUPER' or row.get('total_manager_admin_id')==a['_id']
+                row['can_collect']=row['can_collect_all']
+                row['can_manage'] = a['_role']=='SUPER' or a['_role']=='NORMAL' and (row.get('total_manager_admin_id')==a['_id'] or row['business_id'] in led)
+                # 可管理（查看范围）与可写（业务级写权限）分开：业务写操作只认总负责人。
+                row['can_write'] = a['_role']=='SUPER' or a['_role']=='NORMAL' and row.get('total_manager_admin_id')==a['_id']
             return rows
 
     def configure_business_owner(self, actor, business_id, owner_admin_id, reason):
@@ -63,6 +80,8 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
             if owner_admin_id is not None:
                 require(one(c,"SELECT 1 FROM admin WHERE admin_id=%s AND role='NORMAL' AND status='ACTIVE'",(owner_admin_id,)),
                         '请选择有效普通管理员',422)
+                from .leaders import require_no_other_assignment
+                require_no_other_assignment(c, owner_admin_id, 'business', business_id)
             previous=biz.get('total_manager_admin_id')
             if previous==owner_admin_id:return {'business_id':business_id,'replayed':True}
             c.execute('UPDATE business SET total_manager_admin_id=%s,revision=revision+1 WHERE business_id=%s',(owner_admin_id,business_id))
@@ -80,6 +99,8 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
             if manager_admin_id is not None:
                 require(one(c,"SELECT 1 FROM admin WHERE admin_id=%s AND role='NORMAL' AND status='ACTIVE'",(manager_admin_id,)),
                         '请选择有效普通管理员',422)
+                from .leaders import require_no_other_assignment
+                require_no_other_assignment(c, manager_admin_id, 'business', business_id)
             previous=biz.get('total_manager_admin_id')
             if previous==manager_admin_id:return {'business_id':business_id,'replayed':True}
             c.execute('UPDATE business SET total_manager_admin_id=%s WHERE business_id=%s',(manager_admin_id,business_id))
@@ -88,25 +109,18 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
             return {'business_id':business_id}
 
     def business_admins(self, actor, business_id):
-        """本业务的候选管理员（供业务负责人设置时段负责人、小组征集负责人时选择）。"""
+        """Idle NORMAL administrators available for a new appointment."""
         from .service import require, require_business_owner
-        from .leaders import installed as leaders_installed
         with self.db.transaction() as c:
             a=self.actor(c,actor,('SUPER','NORMAL'))
             require(one(c,'SELECT 1 FROM business WHERE business_id=%s',(business_id,)),'业务不存在',404)
             require_business_owner(c,a,business_id,'只能查看本人负责业务的管理员')
-            clauses=[];args=[]
-            def add(sql,extra=()):
-                clauses.append(sql);args.extend((business_id,)+tuple(extra))
-            add("EXISTS(SELECT 1 FROM service_slot t WHERE t.business_id=%s AND t.manager_admin_id=ad.admin_id)")
-            add("EXISTS(SELECT 1 FROM collection_manager m WHERE m.business_id=%s AND m.admin_id=ad.admin_id)")
-            add("EXISTS(SELECT 1 FROM collection_group_manager gm JOIN business_group bg ON bg.group_id=gm.group_id WHERE bg.business_id=%s AND gm.admin_id=ad.admin_id)")
-            add("EXISTS(SELECT 1 FROM admin ad2 JOIN student s ON s.student_id=ad2.student_id JOIN business_member bm ON bm.student_id=s.student_id WHERE bm.business_id=%s AND (bm.effective_until IS NULL OR bm.effective_until>%s) AND ad2.admin_id=ad.admin_id)",
-                (self.clock().date(),))
-            if leaders_installed(c):
-                add("EXISTS(SELECT 1 FROM leader_scope g WHERE g.business_id=%s AND g.active=1 AND g.admin_id=ad.admin_id)")
-            sql="SELECT DISTINCT ad.admin_id,ad.name,ad.account FROM admin ad WHERE ad.role='NORMAL' AND ad.status='ACTIVE' AND ("+" OR ".join(clauses)+") ORDER BY ad.admin_id"
-            return list(all_rows(c,sql,tuple(args)))
+            return list(all_rows(c,'''SELECT ad.admin_id,ad.name,ad.account,ad.role,ad.status FROM admin ad
+                WHERE ad.role='NORMAL' AND ad.status='ACTIVE'
+                AND NOT EXISTS(SELECT 1 FROM business b WHERE b.total_manager_admin_id=ad.admin_id)
+                AND NOT EXISTS(SELECT 1 FROM leader_scope g WHERE g.active=1 AND g.admin_id=ad.admin_id)
+                AND NOT EXISTS(SELECT 1 FROM service_slot t WHERE t.manager_admin_id=ad.admin_id)
+                ORDER BY ad.admin_id'''))
 
     def slot(self,c,slot_id):
         row=self._legacy_slot(c,slot_id)
@@ -143,9 +157,9 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
                     '原固定班次不属于本人',403)
             old=self.slot(c,old_slot_id)
             self._active_business(c,old['business_id'])
-            require(old['status']=='ACTIVE' and old.get('schedule_kind') in ('FIXED','WEEKLY'),'原固定班次已停用或不支持换班',422)
+            require(old.get('schedule_kind') in ('FIXED','WEEKLY'),'原固定班次不支持换班',422)
             return all_rows(c,'''SELECT t.slot_id,t.team_name,t.business_id,t.schedule_kind,t.weekday,t.period_no,t.start_time,t.end_time
-                FROM service_slot t WHERE t.business_id=%s AND t.status='ACTIVE' AND t.schedule_kind IN ('FIXED','WEEKLY')
+                FROM service_slot t WHERE t.business_id=%s AND t.schedule_kind IN ('FIXED','WEEKLY')
                 AND NOT EXISTS(SELECT 1 FROM slot_member m WHERE m.student_id=%s AND m.slot_id=t.slot_id)
                 ORDER BY t.weekday,t.period_no''',(old['business_id'],a['_id']))
 
@@ -175,7 +189,7 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
         now=getattr(self,'_membership_effective',self.clock())
         current={(r['student_id'],r['slot_id']) for r in all_rows(c,"""SELECT m.* FROM slot_member m
             JOIN student s ON s.student_id=m.student_id JOIN service_slot t ON t.slot_id=m.slot_id
-            WHERE s.status='ACTIVE' AND t.status='ACTIVE' AND t.schedule_kind IN ('FIXED','WEEKLY')""")}
+            WHERE s.status='ACTIVE' AND t.schedule_kind IN ('FIXED','WEEKLY')""")}
         open_rows=all_rows(c,'SELECT * FROM semester_member WHERE semester_id=%s AND effective_until IS NULL',(term['semester_id'],))
         previous={(r['student_id'],r['slot_id']) for r in open_rows}
         effective=datetime.combine(term['start_date'],time())
@@ -192,7 +206,7 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
         slots=[self.slot(c,s) for s in sorted(set(slot_ids))]
         for slot in slots:
             if not one(c,'SELECT 1 FROM slot_member WHERE slot_id=%s AND student_id=%s',(slot['slot_id'],student_id)):self._active_business(c,slot['business_id'])
-        require(all(s['status']=='ACTIVE' and s['schedule_kind'] in ('FIXED','WEEKLY') for s in slots),'请选择有效固定时段或开心花园岗位',422)
+        require(all(s['schedule_kind'] in ('FIXED','WEEKLY') for s in slots),'请选择有效固定时段或开心花园岗位',422)
         codes={s['business_code'] for s in slots}
         consult_days={s['weekday'] for s in slots if s['business_code']=='CONSULT'}
         previous_days={r['weekday'] for r in all_rows(c,'''SELECT t.weekday FROM slot_member m JOIN service_slot t ON t.slot_id=m.slot_id
@@ -223,7 +237,7 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
                 c.execute("UPDATE schedule SET status='CANCELLED',cancel_reason='MEMBERSHIP' WHERE schedule_id=%s",(row['schedule_id'],))
                 c.execute("UPDATE leave_application SET approve_status='CANCELLED' WHERE schedule_id=%s AND approve_status IN ('PENDING','APPROVED')",(row['schedule_id'],))
         c.execute("""UPDATE transfer_application p SET final_status='CANCELLED' WHERE student_id=%s
-            AND old_slot_id IS NOT NULL AND final_status='PENDING' AND first_status<>'REJECTED'
+            AND old_slot_id IS NOT NULL AND final_status='PENDING'
             AND NOT EXISTS(SELECT 1 FROM slot_member m WHERE m.student_id=p.student_id AND m.slot_id=p.old_slot_id)""",(student_id,))
         self.snapshot_memberships(c)
         self.audit(c,admin_id,'SET_MEMBERSHIPS','student',student_id,{'slots':[r['slot_id'] for r in before]}, {'slots':slot_ids},reason)
@@ -267,6 +281,88 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
                 self.sync_semesters(c,strict_student=student_id)
             return {'student_id':student_id,'slot_ids':slot_ids,'effective_date':day}
 
+    def affiliation_catalog(self,actor):
+        """全部可调整的固定时段、专项业务和小组，供「更改归属」一次展示。"""
+        with self.db.transaction() as c:
+            self.actor(c,actor,('SUPER','NORMAL'))
+            slots=all_rows(c,"""SELECT s.slot_id,s.business_id,s.team_name,s.period_no,s.start_time,s.end_time,
+                s.weekday,s.schedule_kind,s.manager_admin_id,b.name AS business_name,b.status AS business_status
+                FROM service_slot s JOIN business b ON b.business_id=s.business_id
+                WHERE b.status='ACTIVE' AND (s.weekday IS NOT NULL OR s.schedule_kind='WEEKLY')
+                ORDER BY b.business_id,s.weekday,s.period_no,s.slot_id""")
+            businesses=all_rows(c,"""SELECT business_id,name,kind,status FROM business
+                WHERE kind='EVENT' AND status='ACTIVE' ORDER BY business_id""")
+            groups=all_rows(c,"""SELECT g.group_id,g.business_id,g.name,b.name AS business_name
+                FROM business_group g JOIN business b ON b.business_id=g.business_id
+                WHERE b.kind='EVENT' AND b.status='ACTIVE' ORDER BY b.business_id,g.group_id""")
+            return {'slots':slots,'businesses':businesses,'groups':groups}
+
+    def set_affiliations(self,actor,student_id,slot_ids=None,business_ids=None,group_ids=None,
+                         effective_date=None,reason='调整队员归属'):
+        """一次事务内同时调整固定时段、专项业务与小组归属。"""
+        from .service import require,parse_date,reason_text
+        slot_ids=sorted({int(v) for v in (slot_ids or [])})
+        business_ids=sorted({int(v) for v in (business_ids or [])})
+        group_ids=sorted({int(v) for v in (group_ids or [])})
+        require(len(slot_ids)<=86 and len(business_ids)<=100 and len(group_ids)<=300,'归属数量超出上限',422)
+        day=parse_date(effective_date) if effective_date else self.clock().date()
+        require(day>=self.clock().date(),'归属调整不能追溯改写历史',422)
+        reason=reason_text(reason)
+        with self.db.transaction() as c:
+            multi=installed(c)
+            if not multi:
+                require(not business_ids and not group_ids,'当前数据库未启用专项业务与小组归属',422)
+                return self.set_memberships(actor,student_id,slot_ids,effective_date,reason)
+        with self.db.transaction(True) as c:
+            a=self.actor(c,actor,('SUPER','NORMAL'))
+            require(one(c,"SELECT 1 FROM student WHERE student_id=%s AND status='ACTIVE'",(student_id,)),'队员不存在或不在队',422)
+            for business_id in business_ids:
+                biz=one(c,'SELECT * FROM business WHERE business_id=%s',(business_id,))
+                require(biz and biz['kind']=='EVENT','专项业务只能选择非固定业务',422)
+                self._active_business(c,business_id)
+            groups=[]
+            for group_id in group_ids:
+                group=one(c,'SELECT * FROM business_group WHERE group_id=%s',(group_id,))
+                require(group,'小组不存在',404)
+                require(group['business_id'] in business_ids,'所选小组必须属于本次选中的专项业务',422)
+                self._active_business(c,group['business_id'])
+                groups.append(group)
+            before_slots=[r['slot_id'] for r in all_rows(c,'SELECT slot_id FROM slot_member WHERE student_id=%s',(student_id,))]
+            before_business=[r['business_id'] for r in all_rows(c,'''SELECT business_id FROM business_member
+                WHERE student_id=%s AND effective_from<=%s AND (effective_until IS NULL OR effective_until>%s)''',(student_id,day,day))]
+            before_groups=[r['group_id'] for r in all_rows(c,'''SELECT group_id FROM group_member
+                WHERE student_id=%s AND effective_from<=%s AND (effective_until IS NULL OR effective_until>%s)''',(student_id,day,day))]
+            if a['_role']=='NORMAL':
+                managed_slots={int(s) for s in (a.get('_lead_slots') or [])}
+                managed_slots|={int(s['slot_id']) for s in all_rows(c,'SELECT slot_id FROM service_slot WHERE manager_admin_id=%s',(a['_id'],))}
+                managed_businesses={int(b['business_id']) for b in all_rows(c,'SELECT business_id FROM business WHERE total_manager_admin_id=%s',(a['_id'],))}
+                managed_groups={int(g['group_id']) for g in all_rows(c,'SELECT group_id,business_id FROM business_group WHERE business_id IN ('+','.join(['%s']*len(managed_businesses))+')',tuple(sorted(managed_businesses)))} if managed_businesses else set()
+                require((set(before_slots)&managed_slots) or (set(before_business)&managed_businesses) or (set(before_groups)&managed_groups),'该队员不在你的负责范围',403)
+                require(set(slot_ids)!=set(before_slots) or set(business_ids)!=set(before_business) or set(group_ids)!=set(before_groups),'没有需要调整的归属',422)
+            changed_slots=set(before_slots)!=set(slot_ids)
+            if day>self.clock().date():
+                self._validate_memberships(c,student_id,slot_ids)
+                c.execute("UPDATE membership_change SET status='CANCELLED' WHERE student_id=%s AND status='PENDING'",(student_id,))
+                c.execute('INSERT INTO membership_change(student_id,effective_date,slot_ids,admin_id,reason) VALUES(%s,%s,%s,%s,%s)',
+                          (student_id,day,json.dumps(slot_ids),a['_id'],reason))
+            elif changed_slots:
+                self._replace_memberships(c,student_id,slot_ids,a['_id'],reason)
+            c.execute('DELETE FROM business_member WHERE student_id=%s AND effective_from>=%s',(student_id,day))
+            c.execute('''UPDATE business_member SET effective_until=%s WHERE student_id=%s AND effective_from<%s
+                AND (effective_until IS NULL OR effective_until>%s)''',(day,student_id,day,day))
+            for business_id in business_ids:
+                c.execute('INSERT INTO business_member(business_id,student_id,effective_from) VALUES(%s,%s,%s)',(business_id,student_id,day))
+            c.execute('DELETE FROM group_member WHERE student_id=%s AND effective_from>=%s',(student_id,day))
+            c.execute('''UPDATE group_member SET effective_until=%s WHERE student_id=%s AND effective_from<%s
+                AND (effective_until IS NULL OR effective_until>%s)''',(day,student_id,day,day))
+            for group in groups:
+                c.execute('INSERT INTO group_member(group_id,student_id,effective_from) VALUES(%s,%s,%s)',(group['group_id'],student_id,day))
+            if day<=self.clock().date() and changed_slots:self.sync_semesters(c,strict_student=student_id)
+            self.audit(c,a['_id'],'SET_STUDENT_AFFILIATIONS','student',student_id,
+                       {'slots':before_slots,'businesses':before_business,'groups':before_groups},
+                       {'slots':slot_ids,'businesses':business_ids,'groups':group_ids,'effective_date':day},reason)
+            return {'student_id':student_id,'slot_ids':slot_ids,'business_ids':business_ids,'group_ids':group_ids,'effective_date':day}
+
     def _apply_due_memberships(self,c):
         if not installed(c): return
         for change in all_rows(c,"SELECT * FROM membership_change WHERE status='PENDING' AND effective_date<=%s ORDER BY effective_date,change_id",(self.clock().date(),)):
@@ -306,7 +402,7 @@ class BusinessService(BusinessWorkflows, SpecialtyService):
                 if not any(w['business_id']==m['business_id'] and w['active_from']<=business_begins and (w['active_until'] is None or business_begins<w['active_until']) for w in windows):continue
                 if begins<m['effective_from'] or m['effective_until'] is not None and begins>=m['effective_until']: continue
                 if m['manager_admin_id'] is None or not weekly and m['need_num'] is None:
-                    issues.add(f'{m["team_name"]}：负责人或容量待完善；已有固定队员照常排班计时')
+                    issues.add(f'{m["team_name"]}：负责人或建议人数待完善；已有固定队员照常排班计时')
                 confirmed=not weekly or m['effective_from']<=datetime.combine(max(monday(d),term['start_date']),time())
                 desired[m['student_id'],m['slot_id'],d]={**m,'week_no':week,'weekly_confirmed':confirmed}
         existing=all_rows(c,"""SELECT s.*,t.schedule_kind,t.business_id,t.start_time,t.end_time FROM schedule s

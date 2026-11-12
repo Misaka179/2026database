@@ -24,7 +24,7 @@ def main():
         service.actor(c, actor, ('SUPER',))
         slots = all_rows(c, """SELECT t.*,b.code,b.name AS business_name FROM service_slot t
             JOIN business b ON b.business_id=t.business_id WHERE b.code IN ('ART','GARDEN','PUBLICITY')
-            AND t.status='ACTIVE' ORDER BY b.business_id,t.weekday,t.period_no""")
+            ORDER BY b.business_id,t.weekday,t.period_no""")
         businesses = all_rows(c, "SELECT * FROM business WHERE code IN ('GARDEN','PUBLICITY') ORDER BY business_id")
     art = [s for s in slots if s['code']=='ART']
     require(len(art)==28 and len(businesses)==2, '新增业务时段尚未完整初始化')
@@ -87,7 +87,7 @@ def main():
         admins = all_rows(c,'SELECT admin_id,account,name,role,status FROM admin ORDER BY admin_id')
         scopes = all_rows(c,"""SELECT t.*,b.name AS business_name,b.code FROM service_slot t
             JOIN business b ON b.business_id=t.business_id ORDER BY b.business_id,t.weekday,t.period_no""")
-        extra = all_rows(c,"SELECT name FROM business WHERE manager_scope='NONE' ORDER BY business_id")
+        extra = all_rows(c,"SELECT name FROM business WHERE kind='EVENT' AND total_manager_admin_id IS NULL ORDER BY business_id")
     verified=[]
     for a in admins:
         password=known.get(a['account'])
@@ -108,7 +108,7 @@ def main():
            '', '美育每个时段一位管理员；开心花园一位管理员统一管理A/B岗；青广宣传一位管理员统一管理全部21个时段。',
            '', '咨询服务保留原35个测试管理员。admin1、admin2是旧演示管理员，其现有范围在下表标注。',
            '', '以下非固定业务由超级管理员管理征集、审批和专项导入，无独立普通管理员：'+ '、'.join(b['name'] for b in extra)+'。',
-           '', '新增业务配置了负责人，但仍需设置容量及实际队员归属后才能查看相应出勤记录。',
+           '', '新增业务配置了负责人，但仍需设置建议人数及实际队员归属后才能查看相应出勤记录。',
            '', '| 账号 | 密码 | 名称 | 实际管理范围 |','|---|---|---|---|']
     for a in sorted(verified,key=lambda a:(a['role']!='SUPER',a['admin_id'])):
         lines.append(f"| `{a['account']}` | `{a['password'] or '未保存明文密码'}` | {a['name']} | {a['scope']} |")

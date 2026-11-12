@@ -8,17 +8,16 @@
     name: '姓名', student_id: '学号', admin_id: '管理员编号', role: '管理员角色',
     college: '学院', phone: '联系电话', credit_score: '当前信用分', status: '状态',
     join_time: '加入时间', slot_id: '班次编号', team_name: '分队名称', period_no: '时段编号',
-    start_time: '开始时间', end_time: '结束时间', location: '服务地点', need_num: '需求人数',
+    start_time: '开始时间', end_time: '结束时间', need_num: '建议人数',
     service_minutes: '服务时长（分钟）', manager_admin_id: '负责管理员编号',
     schedule_id: '排班编号', schedule_date: '服务日期', create_time: '创建时间',
     active_marker: '有效记录标记', attendance_id: '考勤编号', attendance_status: '考勤结果',
     check_time: '考勤记录时间', remark: '备注', record_id: '服务记录编号', record_status: '记录状态',
     leave_id: '请假申请编号', reason: '原因', apply_time: '申请时间', approved: '审批决定',
     approve_admin_id: '审批管理员编号', approve_status: '审批状态', approve_time: '审批时间',
-    transfer_id: '换班申请编号', old_schedule_id: '原排班编号', new_slot_id: '目标班次编号',
-    new_date: '目标日期', first_admin_id: '初审管理员编号', first_status: '初审状态',
-    first_time: '初审时间', final_admin_id: '终审管理员编号', final_status: '终审状态',
-    final_time: '终审时间', new_schedule_id: '新排班编号', withdrawal_id: '退队申请编号',
+    transfer_id: '换班申请编号', new_slot_id: '目标班次编号',
+    final_admin_id: '审核人编号', final_status: '审核状态',
+    final_time: '审核时间', withdrawal_id: '退队申请编号',
     stage: '审批阶段', rule_id: '信用规则编号', violation_type: '违规类型', version: '规则版本',
     deduct_score: '规则扣分', create_admin_id: '规则创建人编号', violation_id: '违规编号',
     nominal_deduct: '规则规定扣分', credit_log_id: '信用流水编号', operator_id: '操作人编号',
@@ -36,16 +35,16 @@
     loc: '字段位置', msg: '校验说明', input: '输入内容', ctx: '校验条件',
     occupied: '已安排人数', remaining: '剩余名额', manager_name: '班次负责人姓名',
     business_id: '业务编号', business_name: '业务名称', business_code: '业务代码', kind: '业务类型',
-    manager_scope: '负责人范围', business_ids: '业务范围编号', group_id: '小组编号',
+    business_ids: '业务范围编号', group_id: '小组编号',
     group_name: '小组名称', group_ids: '小组范围编号', slot_ids: '时段编号', slots: '归属时段',
     weekday: '星期（1—7）', semester_id: '学期编号', week_no: '周次', working: '本周是否上工',
     effective_date: '生效日期', active: '是否加入', student_ids: '涉及队员', member_count: '成员数',
     mappings: '工作表与去向映射', decisions: '重复行处理', commit: '是否正式导入',
     request_hash: '幂等校验值', duplicate_choices: '重复行处理',
-    student_name: '志愿者姓名', admin_name: '管理员姓名', total: '总数', items: '记录', slot_status: '班次状态',
+    student_name: '志愿者姓名', admin_name: '管理员姓名', total: '总数', items: '记录',
     total_manager_admin_id: '业务总负责人编号', total_manager_name: '业务总负责人姓名',
-    manager_admin_id: '业务负责人（旧字段，已停用）',
-    owner_admin_id: '总负责人编号', leaders: '分队负责人（按星期）', scope_id: '管理范围编号',
+    manager_admin_id: '班次负责人编号（旧字段，已停用）',
+    owner_admin_id: '业务总负责人编号', leaders: '分队负责人（按星期）', scope_id: '管理范围编号',
     leader_scope: '管理范围表',
   };
   const enums = {
@@ -57,8 +56,8 @@
     first: '初审', final: '终审', ok: '运行正常', bearer: '持有者凭据',
     CREATE_STUDENT: '创建志愿者', CREATE_ADMIN: '创建管理员', CREATE_SLOT: '创建班次',
     CREATE_SCHEDULE: '创建排班', CANCEL_SCHEDULE: '取消排班', APPROVE_LEAVE: '审批请假',
-    APPROVE_TRANSFER_FIRST: '换班初审', APPROVE_TRANSFER_FINAL: '换班终审',
-    TRANSFER_FIRST: '换班初审', TRANSFER_FINAL: '换班终审',
+    APPROVE_TRANSFER_FIRST: '换班审核（历史初审）', APPROVE_TRANSFER_FINAL: '换班审核（历史终审）',
+    TRANSFER_REVIEW: '换班审核', TRANSFER_FIRST: '换班审核（历史初审）', TRANSFER_FINAL: '换班审核（历史终审）',
     APPROVE_WITHDRAWAL: '审批退队', RECORD_ATTENDANCE: '登记考勤', REVISE_HOURS: '修正时长',
     SET_CREDIT_RULE: '更新信用规则', schedule: '排班表', attendance: '考勤表',
     service_slot: '服务班次表', service_record: '服务记录表', credit_rule: '信用规则表',
@@ -66,15 +65,15 @@
     withdrawal_application: '退队申请表', operation_log: '操作日志表', violation: '违规表',
     CREATE_BUSINESS: '新增业务', RENAME_BUSINESS: '业务改名', ARCHIVE_BUSINESS: '归档业务',
     RESTORE_BUSINESS: '恢复业务', ADD_BUSINESS_SLOT: '添加固定时段',
-    ASSIGN_SLOT_MANAGERS: '按分队设置班次负责人', CONFIGURE_SLOT: '设置班次负责人与容量',
-    CONFIGURE_BUSINESS: '设置业务负责人', CREATE_GROUP: '新增小组', SET_GROUP_MEMBER: '调整小组成员',
-    CONFIGURE_BUSINESS_OWNER: '设置业务总负责人', APPOINT_LEADER: '设置分队负责人',
+    ASSIGN_SLOT_MANAGERS: '按分队设置班次负责人', CONFIGURE_SLOT: '设置班次负责人与建议人数',
+    CONFIGURE_BUSINESS: '设置业务总负责人（旧入口）', CREATE_GROUP: '新增小组', SET_GROUP_MEMBER: '调整小组成员',
+    CONFIGURE_BUSINESS_OWNER: '设置业务总负责人', APPOINT_LEADER: '任命分队或时段负责人',
     IMPORT_MEMBERS: '导入小组成员', PLAN_MEMBERSHIPS: '设置归属生效日期',
     SET_BUSINESS_MEMBER: '调整专项业务归属', CREATE_EVENT: '录入临时服务',
     RECOGNIZE_EVENT: '认定临时服务时长', SET_BUSINESS_WEEK: '更正每周开工安排',
     CONFIRM_GARDEN: '确认花园本周服务', INCREASE_FIXED_HOURS: '上调固定时段时长',
     FIXED: '固定班次业务', EVENT: '非固定业务', WEEKLY: '按周岗位',
-    BUSINESS: '业务负责人', SLOT: '班次负责人', NONE: '无需负责人',
+    BUSINESS: '业务总负责人', SLOT: '时段负责人', NONE: '无需负责人',
     business: '业务表', business_group: '小组表', group_member: '小组成员表',
     slot_member: '班次归属表', business_member: '业务归属表',
   };
@@ -87,7 +86,8 @@
     'POST /applications/leave': '提交请假申请', 'POST /applications/transfer': '提交换班申请',
     'POST /applications/withdrawal': '提交退队申请', 'GET /applications/{kind}': '查询申请',
     'POST /applications/leave/{leave_id}/decision': '审批请假申请',
-    'POST /applications/transfer/{transfer_id}/{stage}': '审批换班申请',
+    'POST /applications/transfer/{transfer_id}/decision': '审批换班申请',
+    'POST /applications/transfer/{transfer_id}/{stage}': '审批换班申请（兼容旧调用）',
     'POST /applications/withdrawal/{withdrawal_id}/decision': '审批退队申请',
     'POST /attendance': '登记考勤', 'GET /hours': '查询服务时长',
     'PATCH /service-records/{record_id}': '修正服务时长', 'GET /credit': '查询信用记录',
@@ -335,7 +335,7 @@
     } else {
       control = el('input');
       control.type = /password/i.test(name) ? 'password'
-        : schema.format === 'date' || ['schedule_date', 'new_date', 'start', 'end'].includes(name) ? 'date'
+        : schema.format === 'date' || ['schedule_date', 'start', 'end'].includes(name) ? 'date'
         : ['start_time', 'end_time'].includes(name) ? 'time'
         : ['integer', 'number'].includes(schema.type) ? 'number' : 'text';
       if (control.type === 'password') control.autocomplete = prefix.includes('auth-login') ? 'current-password' : 'new-password';
@@ -448,15 +448,15 @@
     if (path === '/attendance' || /leave\/\{leave_id\}/.test(path)) return '仅负责该班次的普通管理员可执行。';
     if (path === '/students' || path === '/admins' || path === '/credit-rules' || path.startsWith('/credit-rules/') || path === '/operation-logs' || path.startsWith('/service-records/') || (path === '/slots' && method === 'POST')) return '仅超级管理员可执行。';
     if (/^\/applications\/(leave|transfer|withdrawal)$/.test(path) && method === 'POST') return '仅在队志愿者可为本人提交申请。';
-    if (path.includes('/transfer/{transfer_id}')) return '初审由负责原班次的普通管理员执行；终审由超级管理员执行。';
-    if (path.includes('/withdrawal/{withdrawal_id}')) return '仅超级管理员可审批退队。';
+    if (path.includes('/transfer/{transfer_id}')) return '由原固定班次侧的时段负责人、业务总负责人或该星期分队负责人一次审核；超级管理员可兜底审核所有申请。审核结果抄送超级管理员。';
+    if (path.includes('/withdrawal/{withdrawal_id}')) return '有唯一分队负责人时由该负责人一次审核；无唯一负责人时由超级管理员审核。审核结果抄送超级管理员。';
     if (path === '/hours' || path === '/credit') return '志愿者可查询本人记录；超级管理员需指定学号。';
-    if (path.startsWith('/member-imports')) return '仅超级管理员或该业务负责人可执行；撤销限导入后 7 天内。';
-    if (/^\/slots\/\{slot_id\}\/members\/\{student_id\}$/.test(path) && method === 'DELETE') return '仅超级管理员或该业务负责人可执行；只移除该班次归属，不删除账号。';
+    if (path.startsWith('/member-imports')) return '仅超级管理员或该业务总负责人可执行；撤销限导入后 7 天内。';
+    if (/^\/slots\/\{slot_id\}\/members\/\{student_id\}$/.test(path) && method === 'DELETE') return '仅超级管理员或该业务总负责人可执行；只移除该班次归属，不删除账号。';
     if (path === '/businesses/{business_id}/owner') return '仅超级管理员可执行。';
-    if (path === '/businesses/{business_id}/leaders/{weekday}') return '仅超级管理员或该业务负责人可执行。';
-    if (path === '/business-groups/{group_id}/members/{student_id}') return '仅超级管理员或该业务负责人可执行；按生效日期收口，不追改历史。';
-    if (path === '/students/import') return '仅超级管理员或该业务负责人可执行；固定业务按班次或分类/时段列映射导入。';
+    if (path === '/businesses/{business_id}/leaders/{weekday}') return '仅超级管理员或该业务总负责人可执行。';
+    if (path === '/business-groups/{group_id}/members/{student_id}') return '仅超级管理员或该业务总负责人可执行；按生效日期收口，不追改历史。';
+    if (path === '/students/import') return '仅超级管理员或该业务总负责人可执行；固定业务按班次或分类/时段列映射导入。';
     return '需先登录，服务端将根据当前角色和数据归属校验权限。';
   }
   function schemaDescription(schema) {

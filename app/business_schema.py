@@ -7,9 +7,9 @@ def installed(c):
     return bool(c.fetchone())
 
 
-CATALOG = [('CONSULT', '咨询服务', 'FIXED', 'SLOT'),
-           ('ART', '美育', 'FIXED', 'SLOT'), ('PUBLICITY', '青广宣传', 'FIXED', 'BUSINESS'),
-           ('GARDEN', '开心花园', 'WEEKLY', 'BUSINESS')]
+CATALOG = [('CONSULT', '咨询服务', 'FIXED'),
+           ('ART', '美育', 'FIXED'), ('PUBLICITY', '青广宣传', 'FIXED'),
+           ('GARDEN', '开心花园', 'WEEKLY')]
 ART = [('08:30','09:55',120),('10:15','11:30',120),('14:00','16:25',180),('16:45','18:00',120)]
 PUBLICITY = [('11:30','13:30',180),('16:35','18:35',150),('18:35','19:35',120)]
 
@@ -27,15 +27,15 @@ def migrate(settings):
         c.execute('''CREATE TABLE IF NOT EXISTS business (
             business_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
             code VARCHAR(32) NULL UNIQUE, name VARCHAR(100) NOT NULL UNIQUE,
-            kind VARCHAR(16) NOT NULL, manager_scope VARCHAR(16) NOT NULL,
-            manager_admin_id BIGINT UNSIGNED NULL,
-            FOREIGN KEY(manager_admin_id) REFERENCES admin(admin_id)
+            kind VARCHAR(16) NOT NULL,
+            total_manager_admin_id BIGINT UNSIGNED NULL,
+            CONSTRAINT fk_business_owner FOREIGN KEY(total_manager_admin_id) REFERENCES admin(admin_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci''')
-        for code, name, kind, scope in CATALOG:
-            c.execute('INSERT IGNORE INTO business(code,name,kind,manager_scope) VALUES(%s,%s,%s,%s)', (code,name,kind,scope))
+        for code, name, kind in CATALOG:
+            c.execute('INSERT IGNORE INTO business(code,name,kind) VALUES(%s,%s,%s)', (code,name,kind))
         for name in ('明远学术汇','讲解队','钢琴队','古筝队','科研探索','干部'):
             if name=='干部' and one(c,"SELECT 1 FROM business WHERE name='干部及干事'"):continue
-            c.execute("INSERT IGNORE INTO business(name,kind,manager_scope) VALUES(%s,'EVENT','NONE')", (name,))
+            c.execute("INSERT IGNORE INTO business(name,kind) VALUES(%s,'EVENT')", (name,))
         consult = one(c,"SELECT business_id FROM business WHERE code='CONSULT'")['business_id']
         additions = [
             ('service_slot','business_id',f'BIGINT UNSIGNED NOT NULL DEFAULT {consult}'),
@@ -48,7 +48,7 @@ def migrate(settings):
         for table, col, definition in additions:
             c.execute(f'SHOW COLUMNS FROM {table} LIKE %s',(col,))
             if not c.fetchone(): c.execute(f'ALTER TABLE {table} ADD {col} {definition}')
-        # 业务总负责人：与 business.manager_admin_id（业务级普通管理员/时段管理员）分开存
+        # 业务总负责人：业务层只保留这一处负责人口径。
         c.execute("SHOW COLUMNS FROM business LIKE 'total_manager_admin_id'")
         if not c.fetchone():
             c.execute('''ALTER TABLE business ADD total_manager_admin_id BIGINT UNSIGNED NULL,
@@ -70,13 +70,13 @@ def migrate(settings):
                 for period,(start,end,duration) in enumerate(periods,1):
                     if not one(c,'SELECT 1 FROM service_slot WHERE business_id=%s AND weekday=%s AND period_no=%s',(biz['business_id'],day,period)):
                         c.execute('''INSERT INTO service_slot(business_id,team_name,weekday,period_no,start_time,end_time,
-                            location,need_num,service_minutes,manager_admin_id) VALUES(%s,%s,%s,%s,%s,%s,%s,NULL,%s,NULL)''',
-                            (biz['business_id'],f'{biz["name"]} · 周{"一二三四五六日"[day-1]}第{period}时段',day,period,start,end,biz['name'],duration))
+                            need_num,service_minutes,manager_admin_id) VALUES(%s,%s,%s,%s,%s,%s,NULL,%s,NULL)''',
+                            (biz['business_id'],f'{biz["name"]} · 周{"一二三四五六日"[day-1]}第{period}时段',day,period,start,end,duration))
         garden = one(c,"SELECT * FROM business WHERE code='GARDEN'")
         for period, post in enumerate(('A','B'),1):
             if not one(c,'SELECT 1 FROM service_slot WHERE business_id=%s AND period_no=%s',(garden['business_id'],period)):
                 c.execute('''INSERT INTO service_slot(business_id,schedule_kind,team_name,period_no,start_time,end_time,
-                    location,need_num,service_minutes,manager_admin_id) VALUES(%s,'WEEKLY',%s,%s,NULL,NULL,'开心花园',NULL,90,NULL)''',
+                    need_num,service_minutes,manager_admin_id) VALUES(%s,'WEEKLY',%s,%s,NULL,NULL,NULL,90,NULL)''',
                     (garden['business_id'],f'开心花园 {post} 岗',period))
         definitions = {
             'business_member': '''membership_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

@@ -71,17 +71,17 @@ class FixedRosterTests(unittest.TestCase):
         self.s.configure_slot(self.super,self.other,self.demo['other_admin']['id'],20)
         self.s.set_memberships(self.super,'20260001',[self.slot])
 
-    def test_catalogue_is_idempotent_and_preserves_old_slots(self):
+    def test_catalogue_is_idempotent(self):
         migrate(self.settings)
         rows=self.s.list_slots(self.super)
         current=[r for r in rows if r['weekday'] is not None and r['business_code']=='CONSULT']
         self.assertEqual(len(current),35)
-        self.assertEqual(len([r for r in rows if r['schedule_kind']=='LEGACY']),2)
+        self.assertEqual(len([r for r in rows if r['schedule_kind']=='LEGACY']),0)
         for r in current:
             self.assertEqual(r['team_name'][0],'周')
             self.assertEqual(str(r['start_time']),TIMES[r['period_no']-1][0].lstrip('0')+':00')
         with self.assertRaises(DomainError):
-            self.s.create_slot(self.super,'非法时段',1,'10:00','11:00','图书馆',2,self.normal['id'])
+            self.s.create_slot(self.super,'非法时段',1,'10:00','11:00',2,self.normal['id'])
 
     def test_date_and_membership_scope_are_enforced(self):
         self.s.create_schedule(self.normal,'20260001',self.slot,'2030-01-07')
@@ -114,7 +114,7 @@ class FixedRosterTests(unittest.TestCase):
         with self.assertRaises(DomainError):self.s.import_roster(self.super,data,commit=True,initial_password='ImportTest123!')
         self.assertEqual(self.s.students(self.super,'123'),[])
 
-    def test_fixed_transfer_full_approval_scope_and_idempotency(self):
+    def test_fixed_transfer_single_review_scope_and_idempotency(self):
         student=self.demo['student']
         self.assertEqual([s['slot_id'] for s in self.s.my_memberships(student)],[self.slot])
         self.assertEqual(self.s.my_memberships(self.demo['other_student']),[])
@@ -122,37 +122,33 @@ class FixedRosterTests(unittest.TestCase):
         tid=self.s.apply_fixed_transfer(student,self.slot,self.other,'调整每周时间')['transfer_id']
         self.assertEqual(len(self.s.list_applications(self.normal,'transfer')),1)
         self.assertEqual(self.s.list_applications(self.demo['other_admin'],'transfer'),())
-        with self.assertRaises(DomainError):self.s.approve_transfer(self.demo['other_admin'],tid,'first',True)
-        with self.assertRaises(DomainError):self.s.approve_transfer(self.super,tid,'final',True)
-        self.s.approve_transfer(self.normal,tid,'first',True)
-        self.s.approve_transfer(self.super,tid,'final',True)
+        with self.assertRaises(DomainError):self.s.approve_transfer(self.demo['other_admin'],tid,True)
+        self.s.approve_transfer(self.super,tid,True)
         self.assertEqual([s['slot_id'] for s in self.s.my_memberships(student)],[self.other])
-        self.assertTrue(self.s.approve_transfer(self.super,tid,'final',True)['replayed'])
+        self.assertTrue(self.s.approve_transfer(self.normal,tid,True)['replayed'])
         self.assertEqual(self.s.list_schedules(student),())
 
-    def test_fixed_transfer_rechecks_capacity_and_ownership(self):
+    def test_fixed_transfer_ignores_suggested_number_and_rechecks_ownership(self):
         student=self.demo['student']
         with self.assertRaises(DomainError):self.s.apply_fixed_transfer(self.demo['other_student'],self.slot,self.other,'不属于本人')
         tid=self.s.apply_fixed_transfer(student,self.slot,self.other,'每周调整')['transfer_id']
         with self.assertRaisesRegex(DomainError,'待处理'):self.s.apply_fixed_transfer(student,self.slot,self.other,'重复')
-        self.s.approve_transfer(self.normal,tid,'first',True)
         self.s.configure_slot(self.super,self.other,self.demo['other_admin']['id'],1)
         self.s.set_memberships(self.super,'20260002',[self.other])
-        with self.assertRaisesRegex(DomainError,'人数已满'):self.s.approve_transfer(self.super,tid,'final',True)
-        self.assertEqual([s['slot_id'] for s in self.s.my_memberships(student)],[self.slot])
-        self.s.set_memberships(self.super,'20260001',[])
-        self.assertEqual(self.s.list_applications(student,'transfer')[0]['final_status'],'CANCELLED')
+        self.s.approve_transfer(self.normal,tid,True)
+        self.assertEqual([s['slot_id'] for s in self.s.my_memberships(student)],[self.other])
+        self.assertEqual(self.s.list_applications(student,'transfer')[0]['final_status'],'APPROVED')
 
     def test_fixed_transfer_missing_configuration_and_withdrawal(self):
         with self.db.transaction(True) as c:
             c.execute('UPDATE service_slot SET need_num=NULL,manager_admin_id=NULL WHERE slot_id=%s',(self.other,))
         tid=self.s.apply_fixed_transfer(self.demo['student'],self.slot,self.other,'每周调整')['transfer_id']
-        self.s.approve_transfer(self.normal,tid,'first',True)
-        with self.assertRaisesRegex(DomainError,'人数上限'):self.s.approve_transfer(self.super,tid,'final',True)
+        self.s.approve_transfer(self.normal,tid,True)
+        self.assertEqual([s['slot_id'] for s in self.s.my_memberships(self.demo['student'])],[self.other])
         wid=self.s.apply_withdrawal(self.demo['student'],'退出')['withdrawal_id']
         self.s.approve_withdrawal(self.super,wid,True)
-        self.assertEqual(self.s.list_applications(self.demo['student'],'transfer')[0]['final_status'],'CANCELLED')
-        with self.assertRaises(DomainError):self.s.apply_fixed_transfer(self.demo['student'],self.slot,self.other,'已退队')
+        self.assertEqual(self.s.credit(self.demo['student'])['status'],'QUIT')
+        with self.assertRaises(DomainError):self.s.apply_fixed_transfer(self.demo['student'],self.other,self.slot,'已退队')
 
     def test_fixed_transfer_api_reads_only_self_and_rejects_forged_identity(self):
         from fastapi.testclient import TestClient

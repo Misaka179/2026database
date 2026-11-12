@@ -33,9 +33,26 @@ class BusinessTests(unittest.TestCase):
         self.art=next(s['slot_id'] for s in self.slots if s['business_code']=='ART' and s['weekday']==1 and s['period_no']==3)
         self.pub=next(s['slot_id'] for s in self.slots if s['business_code']=='PUBLICITY' and s['weekday']==1 and s['period_no']==1)
         self.garden=[s['slot_id'] for s in self.slots if s['business_code']=='GARDEN']
-        self.s.configure_slot(self.sup,self.consult,self.normal['id'],20)
-        self.s.configure_slot(self.sup,self.art,self.other['id'],20)
-        for code in ('GARDEN','PUBLICITY'):self.s.configure_business(self.sup,self.b[code]['business_id'],self.normal['id'])
+        def new_admin(name,account):
+            return {'kind':'admin','id':self.s.create_admin(self.sup,name,account,'TestPassword123!')['admin_id']}
+        consult_slot=new_admin('咨询时段管理员','slot-consult')['id']
+        art_slot=new_admin('美育时段管理员','slot-art')['id']
+        self.garden_admin=new_admin('花园业务负责人','owner-garden')
+        self.publicity_admin=new_admin('青广宣传业务负责人','owner-publicity')
+        # 一个管理员只能负责一个范围：先释放演示数据里的旧班次负责人绑定。
+        with self.db.transaction(True) as c:
+            for aid in (self.normal['id'],self.other['id']):
+                c.execute('UPDATE service_slot SET manager_admin_id=NULL WHERE manager_admin_id=%s',(aid,))
+        # 一个管理员只能负责一个范围：业务总负责人、分队负责人、时段负责人互斥。
+        self.s.configure_slot(self.sup,self.consult,None,20)
+        self.s.configure_slot(self.sup,self.art,None,20)
+        self.s.configure_business_owner(self.sup,self.b['CONSULT']['business_id'],self.normal['id'],'咨询业务负责人')
+        self.s.configure_business_owner(self.sup,self.b['ART']['business_id'],self.other['id'],'美育业务负责人')
+        self.s.configure_business_owner(self.sup,self.b['GARDEN']['business_id'],self.garden_admin['id'],'花园业务负责人')
+        self.s.configure_business_owner(self.sup,self.b['PUBLICITY']['business_id'],self.publicity_admin['id'],'青广宣传业务负责人')
+        self.s.configure_slot(self.sup,self.consult,consult_slot,20)
+        self.s.configure_slot(self.sup,self.art,art_slot,20)
+        self.consult_slot_admin={'kind':'admin','id':consult_slot}
 
     def rows(self,sql,args=()):
         with self.db.transaction() as c:return list(all_rows(c,sql,args))
@@ -51,7 +68,7 @@ class BusinessTests(unittest.TestCase):
         self.assertEqual(before,self.rows('SELECT * FROM service_record'))
         self.assertEqual(ids,[s['slot_id'] for s in self.s.list_slots(self.sup)])
         for code,count in [('CONSULT',35),('ART',28),('PUBLICITY',21),('GARDEN',2)]:
-            self.assertEqual(sum(s['business_code']==code and s['status']=='ACTIVE' for s in self.slots),count)
+            self.assertEqual(sum(s['business_code']==code for s in self.slots),count)
         self.assertEqual(next(r for r in self.s.rules(self.sup) if r['status']=='ACTIVE' and r['violation_type']=='LATE')['deduct_score'],1)
 
     def test_multi_weekly_totals_and_scope(self):
@@ -67,7 +84,7 @@ class BusinessTests(unittest.TestCase):
         self.s.set_memberships(self.sup,self.sid,[self.garden[0]])
         row=self.s.list_schedules(self.student)[0];self.assertEqual(row['weekly_confirmed'],0)
         with self.assertRaises(DomainError):self.s.confirm_garden(self.other,row['schedule_id'],'不属于我')
-        self.s.confirm_garden(self.normal,row['schedule_id'],'本周已完成')
+        self.s.confirm_garden(self.garden_admin,row['schedule_id'],'本周已完成')
         self.s.set_memberships(self.sup,self.sid,[self.garden[1]])
         self.now=datetime(2026,9,14);self.s.run_weekly_settlement()
         self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
@@ -79,24 +96,24 @@ class BusinessTests(unittest.TestCase):
         self.s.set_memberships(self.sup,self.sid,[self.garden[0]])
         row=self.s.list_schedules(self.student)[0];self.now=datetime(2026,9,14)
         self.s.run_weekly_settlement();self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
-        with self.assertRaises(DomainError):self.s.record_attendance(self.normal,row['schedule_id'],'LATE','')
-        self.s.confirm_garden(self.normal,row['schedule_id'],'补充确认已完成')
+        with self.assertRaises(DomainError):self.s.record_attendance(self.garden_admin,row['schedule_id'],'LATE','')
+        self.s.confirm_garden(self.garden_admin,row['schedule_id'],'补充确认已完成')
         self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
 
     def test_garden_current_week_absence_can_be_corrected_without_fake_confirmation(self):
         self.term([]);self.now=datetime(2026,9,9)
         self.s.set_memberships(self.sup,self.sid,[self.garden[0]])
         row=self.s.list_schedules(self.student)[0]
-        self.s.record_attendance(self.normal,row['schedule_id'],'ABSENT','本周未完成')
+        self.s.record_attendance(self.garden_admin,row['schedule_id'],'ABSENT','本周未完成')
         self.assertEqual(self.s.credit(self.student)['credit_score'],2)
-        self.s.correct_attendance(self.normal,row['schedule_id'],'NORMAL','核实本周已完成',1)
+        self.s.correct_attendance(self.garden_admin,row['schedule_id'],'NORMAL','核实本周已完成',1)
         self.assertEqual(self.s.credit(self.student)['credit_score'],5)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
 
     def test_stop_restore_hours_credit_and_history_permission(self):
         term=self.term([self.pub,self.garden[0]]);self.now=datetime(2026,9,14)
         self.s.run_weekly_settlement();row=next(r for r in self.s.list_schedules(self.student) if r['slot_id']==self.pub and r['week_no']==1)
-        self.s.correct_attendance(self.normal,row['schedule_id'],'ABSENT','补录缺勤',1)
+        self.s.correct_attendance(self.publicity_admin,row['schedule_id'],'ABSENT','补录缺勤',1)
         self.assertEqual(self.s.credit(self.student)['credit_score'],2)
         with self.assertRaises(DomainError):self.s.set_business_week(self.normal,self.b['PUBLICITY']['business_id'],term,1,False,'历史周停工')
         self.s.set_business_week(self.sup,self.b['PUBLICITY']['business_id'],term,1,False,'核实原定停工')
@@ -108,7 +125,7 @@ class BusinessTests(unittest.TestCase):
 
     def test_stopped_week_no_auto_hours_and_restore_manual_minutes(self):
         term=self.term([self.garden[0]]);self.now=datetime(2026,9,8)
-        self.s.set_business_week(self.normal,self.b['GARDEN']['business_id'],term,1,False,'本周暂停')
+        self.s.set_business_week(self.garden_admin,self.b['GARDEN']['business_id'],term,1,False,'本周暂停')
         self.now=datetime(2026,9,14);self.s.run_weekly_settlement();self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
         self.s.set_business_week(self.sup,self.b['GARDEN']['business_id'],term,1,True,'本周确实完成')
         record=self.s.hours(self.student)['records'][0];self.s.revise_hours(self.sup,record['record_id'],80,'核实80分钟')
@@ -138,6 +155,20 @@ class BusinessTests(unittest.TestCase):
         with self.assertRaises(DomainError):
             self.s.remove_slot_member(self.normal,self.consult,self.sid,'已不在本班次')
         self.assertEqual(len(self.rows('SELECT slot_id FROM slot_member WHERE student_id=%s',(self.sid,))),1)
+
+    def test_slot_leader_can_choose_any_business_and_clear_all(self):
+        self.term([self.consult])
+        actor=self.consult_slot_admin
+        bid=self.b['干部']['business_id']
+        result=self.s.set_affiliations(actor,self.sid,[self.consult],[bid],[],'2026-09-06','跨范围调整')
+        self.assertEqual(result['business_ids'],[bid])
+        self.assertEqual([r['business_id'] for r in self.rows('SELECT business_id FROM business_member WHERE student_id=%s',(self.sid,))],[bid])
+        catalog=self.s.affiliation_catalog(actor)
+        self.assertTrue(len(catalog['slots'])>len(self.s.list_slots(actor)))
+        self.assertTrue(catalog['businesses'])
+        self.s.set_affiliations(actor,self.sid,[],[],[],'2026-09-06','无归属')
+        self.assertEqual(self.rows('SELECT slot_id FROM slot_member WHERE student_id=%s',(self.sid,)),[])
+        self.assertEqual(self.rows('SELECT business_id FROM business_member WHERE student_id=%s',(self.sid,)),[])
 
     def test_claim_range_per_day_return_and_repeat_approval(self):
         self.term([]);self.now=datetime(2026,9,14)

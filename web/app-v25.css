@@ -138,11 +138,11 @@ h3 {
 
 .sidebar-collapse-btn {
   position: absolute;
-  right: 8px;
-  top: 24px;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  right: 0;
+  top: 29px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   border: 1px solid var(--line);
   background: var(--surface-soft, var(--surface));
   color: var(--muted);
@@ -166,8 +166,8 @@ h3 {
 }
 
 .sidebar-collapse-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 .workspace.sidebar-collapsed .sidebar-collapse-btn {
@@ -274,6 +274,7 @@ h3 {
 .brand strong {
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .brand small {
@@ -755,36 +756,52 @@ thead th {
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 10px 20px;
+  padding: 10px 16px;
   background: var(--bg-sunken);
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
   border-bottom: 1px solid var(--line);
-  text-align: left;
+  text-align: center;
 }
 
-/* 操作列：表头与单元格统一右对齐，并按内容宽度收窄，避免按钮列吃掉剩余宽度 */
-table.has-actions thead th:last-child,
+/* 操作列：表头居中，按钮右对齐，并按内容宽度收窄 */
+table.has-actions thead th:last-child {
+  width: 1%;
+  white-space: nowrap;
+  text-align: center;
+}
+
 table.has-actions tbody td:last-child {
   width: 1%;
   white-space: nowrap;
-  text-align: right;
+  text-align: center;
 }
 
 table.has-actions tbody td:last-child .row-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 tbody td {
-  padding: 9px 20px;
+  padding: 9px 16px;
   height: 44px;
   border-bottom: 1px solid var(--line);
+  text-align: center;
 }
 
 tbody tr:hover {
   background: var(--surface-hover);
+}
+
+table td[data-align] {
+  text-align: center;
+}
+
+table.compact-table th,
+table.compact-table td {
+  padding-top: 7px;
+  padding-bottom: 7px;
 }
 
 td strong {
@@ -1601,6 +1618,21 @@ html[data-theme="dark"] .auth-submit {
 @media (max-width: 1240px) {
   :root {
     --sidebar: 206px;
+  }
+  .sidebar .brand {
+    gap: 8px;
+  }
+  .sidebar .brand strong {
+    font-size: 13px;
+  }
+  .sidebar-collapse-btn {
+    width: 22px;
+    height: 22px;
+    top: 30px;
+  }
+  .sidebar-collapse-btn svg {
+    width: 11px;
+    height: 11px;
   }
 }
 

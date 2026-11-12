@@ -53,7 +53,7 @@ class CoreIntegrationTests(unittest.TestCase):
     def make_slot(self, start='10:00', end='12:00', capacity=3,
                   manager=None, period=1):
         return self.service.create_slot(
-            self.super, '测试分队', period, start, end, '测试服务地点',
+            self.super, '测试分队', period, start, end,
             capacity, (manager or self.normal)['id'])['slot_id']
 
     def schedule(self, day='2030-01-02', student=None, slot=None):
@@ -167,13 +167,11 @@ class CoreIntegrationTests(unittest.TestCase):
         self.service.record_attendance(self.normal, sid, 'ABSENT')
         self.assertEqual(self.service.credit(self.student)['credit_score'], 2)
 
-    def test_pending_leave_and_transfer_are_mutually_exclusive(self):
+    def test_duplicate_pending_leave_is_rejected(self):
         sid = self.schedule()
         self.service.apply_leave(self.student, sid, '已有请假')
-        self.assert_domain(lambda: self.service.apply_transfer(
-            self.student, sid, self.slot, '2030-01-03', '换一天'))
-        self.assertEqual(self.count('transfer_application'), 0)
         self.assert_domain(lambda: self.service.apply_leave(self.student, sid, '重复申请'))
+        self.assertEqual(self.count('leave_application'), 1)
 
     def test_attendance_time_guard_and_unapproved_leave_rejected(self):
         sid = self.schedule()
@@ -190,7 +188,7 @@ class CoreIntegrationTests(unittest.TestCase):
         self.assert_domain(lambda: self.service.credit(self.student, self.other_student['id']), 403)
         self.assert_domain(lambda: self.service.logs(self.normal), 403)
         self.assert_domain(lambda: self.service.rules(self.normal), 403)
-        self.assert_domain(lambda: self.service.list_applications(self.normal, 'withdrawal'), 403)
+        self.assertEqual(tuple(self.service.list_applications(self.normal, 'withdrawal')), ())
         self.assert_domain(lambda: self.service.set_rule(self.normal, 'ABSENT', 1, '越权'), 403)
         self.assert_domain(lambda: self.service.create_schedule(
             self.other_admin, self.student['id'], self.slot, '2030-01-04'), 403)
@@ -209,51 +207,47 @@ class CoreIntegrationTests(unittest.TestCase):
             c.execute("UPDATE admin SET status='DISABLED' WHERE admin_id=%s", (self.normal['id'],))
         self.assert_domain(lambda: self.service.list_schedules(self.normal), 403)
 
-    def test_single_date_transfer_is_disabled_without_changing_schedule(self):
-        sid = self.schedule()
-        error=self.assert_domain(lambda:self.service.apply_transfer(self.student,sid,self.slot,'2030-01-03','单次换班'),410)
-        self.assertIn('长期',error.message)
-        self.assertEqual(self.count('transfer_application'),0)
-        self.assertEqual(self.state(sid),'ACTIVE')
+    def test_single_date_transfer_route_and_service_are_removed(self):
+        self.assertFalse(hasattr(self.service, 'apply_transfer'))
+        self.assertEqual(self.count('transfer_application'), 0)
 
     def test_fixed_transfer_rejection_retains_original_membership(self):
         old,target=self.fixed_pair()
         tid=self.service.apply_fixed_transfer(self.student,old,target,'长期调整')['transfer_id']
-        self.service.approve_transfer(self.normal,tid,'first',False)
-        self.assert_domain(lambda:self.service.approve_transfer(self.super,tid,'final',True))
+        self.assertEqual(self.service.approve_transfer(self.normal,tid,False,'不符合调整需求')['status'],'REJECTED')
+        self.assertEqual(self.query_one('SELECT final_status FROM transfer_application WHERE transfer_id=%s',(tid,))['final_status'],'REJECTED')
         self.assertEqual([r['slot_id'] for r in self.service.my_memberships(self.student)],[old])
 
-    def test_capacity_is_per_date_and_overlap_uses_actual_time(self):
+    def test_suggested_number_is_advisory_but_overlap_still_rejected(self):
         limited = self.make_slot(capacity=1)
         self.schedule(slot=limited)
-        self.assert_domain(lambda: self.schedule(student=self.other_student, slot=limited))
+        self.schedule(student=self.other_student, slot=limited)
         self.schedule('2030-01-03', student=self.other_student, slot=limited)
         overlap = self.make_slot('11:00', '13:00')
         self.assert_domain(lambda: self.schedule(slot=overlap))
         adjacent = self.make_slot('12:00', '14:00')
         self.schedule(slot=adjacent)
-        self.assertEqual(self.count('schedule'), 3)
+        self.assertEqual(self.count('schedule'), 4)
 
-    def test_fixed_transfer_revalidates_capacity_at_final_approval(self):
+    def test_fixed_transfer_ignores_target_capacity(self):
         old,target=self.fixed_pair(capacity=1)
         tid=self.service.apply_fixed_transfer(self.student,old,target,'长期调整')['transfer_id']
-        self.service.approve_transfer(self.normal,tid,'first',True)
         self.service.set_memberships(self.super,self.other_student['id'],[target])
-        self.assert_domain(lambda:self.service.approve_transfer(self.super,tid,'final',True))
-        self.assertEqual(self.query_one('SELECT final_status FROM transfer_application WHERE transfer_id=%s',(tid,))['final_status'],'PENDING')
-        self.assertEqual([r['slot_id'] for r in self.service.my_memberships(self.student)],[old])
+        result=self.service.approve_transfer(self.normal,tid,True)
+        self.assertTrue(result['fixed_membership_updated'])
+        self.assertEqual(self.query_one('SELECT final_status FROM transfer_application WHERE transfer_id=%s',(tid,))['final_status'],'APPROVED')
+        self.assertEqual(self.query_one('SELECT COUNT(*) n FROM slot_member WHERE slot_id=%s',(target,))['n'],2)
 
-    def test_parallel_fixed_transfers_cannot_overbook_last_place(self):
+    def test_parallel_fixed_transfers_can_exceed_suggested_number(self):
         old,target=self.fixed_pair(capacity=1)
         self.service.set_memberships(self.super,self.other_student['id'],[old])
         tids=[]
         for student in (self.student,self.other_student):
             tid=self.service.apply_fixed_transfer(student,old,target,'长期争取名额')['transfer_id']
-            self.service.approve_transfer(self.normal,tid,'first',True)
             tids.append(tid)
-        results=self.parallel(*[lambda tid=tid:self.service.approve_transfer(self.super,tid,'final',True) for tid in tids])
-        self.assertEqual(sum(isinstance(r,DomainError) for r in results),1)
-        self.assertEqual(self.query_one('SELECT COUNT(*) n FROM slot_member WHERE slot_id=%s',(target,))['n'],1)
+        results=self.parallel(*[lambda tid=tid:self.service.approve_transfer(self.normal,tid,True) for tid in tids])
+        self.assertEqual(sum(isinstance(r,DomainError) for r in results),0)
+        self.assertEqual(self.query_one('SELECT COUNT(*) n FROM slot_member WHERE slot_id=%s',(target,))['n'],2)
 
     def test_parallel_repeated_absence_deducts_only_once(self):
         sid = self.schedule()
@@ -335,9 +329,8 @@ class CoreIntegrationTests(unittest.TestCase):
     def test_fixed_transfer_audit_failure_rolls_back_membership_and_status(self):
         old,target=self.fixed_pair()
         tid=self.service.apply_fixed_transfer(self.student,old,target,'长期调整')['transfer_id']
-        self.service.approve_transfer(self.normal,tid,'first',True)
         with patch.object(self.service,'audit',side_effect=RuntimeError('audit failed')):
-            with self.assertRaises(RuntimeError):self.service.approve_transfer(self.super,tid,'final',True)
+            with self.assertRaises(RuntimeError):self.service.approve_transfer(self.normal,tid,True)
         self.assertEqual([r['slot_id'] for r in self.service.my_memberships(self.student)],[old])
         self.assertEqual(self.query_one('SELECT final_status FROM transfer_application WHERE transfer_id=%s',(tid,))['final_status'],'PENDING')
 
@@ -410,9 +403,9 @@ class CoreIntegrationTests(unittest.TestCase):
             ('''INSERT INTO leave_application(student_id,schedule_id,reason)
                 VALUES(%s,%s,'冒用其他学生排班')''',
              (self.other_student['id'], sid)),
-            ('''INSERT INTO transfer_application(student_id,old_schedule_id,new_slot_id,new_date,reason)
-                VALUES(%s,%s,%s,'2030-01-03','冒用其他学生排班')''',
-             (self.other_student['id'], sid, self.slot)),
+            ('''INSERT INTO transfer_application(student_id,old_slot_id,new_slot_id,reason)
+                VALUES(%s,%s,%s,'冒用其他学生排班')''',
+             (self.other_student['id'], 999999, self.slot)),
         ]
         for sql, args in statements:
             with self.subTest(sql=sql.split()[2]):
@@ -444,15 +437,12 @@ class CoreIntegrationTests(unittest.TestCase):
         log = self.service.credit(self.student)['logs'][0]
         self.assertEqual(log['before_score'] + log['change_score'], log['after_score'])
 
-    def test_fixed_transfer_rechecks_target_ownership_at_final_approval(self):
+    def test_fixed_transfer_rechecks_target_membership_before_single_review(self):
         old,target=self.fixed_pair()
         tid=self.service.apply_fixed_transfer(self.student,old,target,'长期调整')['transfer_id']
-        self.service.approve_transfer(self.normal,tid,'first',True)
-        # 2.4.0 起咨询服务队员不能新增跨分队归属，而本用例只需要验证终审复核
-        # “目标时段已有归属”，因此跳过归属校验，直接构造历史跨队名单。
         with patch.object(self.service,'_validate_memberships'):
             self.service.set_memberships(self.super,self.student['id'],[old,target])
-        self.assert_domain(lambda:self.service.approve_transfer(self.super,tid,'final',True))
+        self.assert_domain(lambda:self.service.approve_transfer(self.normal,tid,True))
         self.assertEqual(self.query_one('SELECT final_status FROM transfer_application WHERE transfer_id=%s',(tid,))['final_status'],'PENDING')
 
     def test_withdrawal_audit_failure_preserves_student_and_future_schedules(self):

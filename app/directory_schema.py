@@ -15,8 +15,7 @@ def migrate(settings):
         backup_database(settings)
     with Database(settings).transaction(True) as c:
         for table,fields in {'business':{'status':"VARCHAR(16) NOT NULL DEFAULT 'ACTIVE'",'revision':'INT NOT NULL DEFAULT 1'},
-                             'hour_collection':{'group_id':'BIGINT UNSIGNED NULL'},'schedule':{'group_id':'BIGINT UNSIGNED NULL'},
-                             'collection_scope_request':{'group_id':'BIGINT UNSIGNED NULL'}}.items():
+                             'hour_collection':{'group_id':'BIGINT UNSIGNED NULL'},'schedule':{'group_id':'BIGINT UNSIGNED NULL'}}.items():
             for col,definition in fields.items():
                 c.execute(f'SHOW COLUMNS FROM {table} LIKE %s',(col,))
                 if not c.fetchone():c.execute(f'ALTER TABLE {table} ADD {col} {definition}')
@@ -29,9 +28,6 @@ def migrate(settings):
             student_id VARCHAR(32) NOT NULL,effective_from DATE NOT NULL,effective_until DATE NULL,
             UNIQUE KEY uq_group_member(group_id,student_id,effective_from),FOREIGN KEY(group_id) REFERENCES business_group(group_id),
             FOREIGN KEY(student_id) REFERENCES student(student_id)''',
-          'collection_group_manager':'''admin_id BIGINT UNSIGNED NOT NULL,group_id BIGINT UNSIGNED NOT NULL,
-            assigned_by BIGINT UNSIGNED NOT NULL,assigned_at DATETIME NOT NULL,PRIMARY KEY(admin_id,group_id),
-            FOREIGN KEY(admin_id) REFERENCES admin(admin_id),FOREIGN KEY(group_id) REFERENCES business_group(group_id)''',
           'member_import':'''batch_id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,file_hash CHAR(64) NOT NULL,
             request_hash CHAR(64) NOT NULL UNIQUE,admin_id BIGINT UNSIGNED NOT NULL,created_at DATETIME NOT NULL,
             scope_kind VARCHAR(16) NULL,scope_id BIGINT UNSIGNED NULL,

@@ -72,7 +72,7 @@ vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').d
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'semester-ui.js'),'utf8'),context,{filename:'semester-ui.js'});
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'business-ui.js'),'utf8'),context,{filename:'business-ui.js'});
 vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),'collection-ui.js'),'utf8'),context,{filename:'collection-ui.js'});
-for(const name of ['submission-ui.js','governance-ui.js','directory-ui.js','batch-ui.js','leader-ui.js','business-navigation.js'])vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),name),'utf8'),context,{filename:name});
+for(const name of ['submission-ui.js','governance-ui.js','directory-ui.js','batch-ui.js','business-navigation.js'])vm.runInContext(fs.readFileSync(require('node:path').join(require('node:path').dirname(process.argv[1]),name),'utf8'),context,{filename:name});
 vm.runInContext(source,context,{filename:'app.js'});
 const run = code => vm.runInContext(code,context);
 const response = value => ({ok:true,status:200,json:async()=>value});
@@ -112,6 +112,15 @@ class InterfaceAssetTests(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which('node'), 'Node.js is required for browser-script unit scenarios')
 class WorkbenchBehaviorTests(unittest.TestCase):
+    def test_overview_service_slots_shortcut_targets_businesses(self):
+        self.js(r'''
+run(`state.role='SUPER';state.capabilities=null;`);
+const links = run('overviewQuickLinks()');
+assert.match(links, /查看服务班次/);
+assert.match(links, /data-page="businesses"/);
+assert.doesNotMatch(links, /data-page="basics"/);
+''')
+
     def test_new_claim_does_not_reuse_submission_with_same_numeric_id(self):
         self.js(r'''
 run(`state.role='STUDENT';state.data.collections=[{collection_id:1,submissions:[{submission_id:3,item_id:9,service_minutes:60}]},{collection_id:3,submissions:[]}];
@@ -143,16 +152,16 @@ state.data={schedules:[],transfer:[],memberships:[{slot_id:3,team_name:'周一-�
 slots:[{slot_id:3,team_name:'周一-一时段',status:'ACTIVE',weekday:1},{slot_id:8,team_name:'周二-一时段',status:'ACTIVE',weekday:2,start_time:'08:15',end_time:'09:55'}]};
 schedulesPage();`);
 assert.match(element('#main').innerHTML,/我的固定班次/);
-assert.match(element('#main').innerHTML,/周一-一时段/);
+assert.match(element('#main').innerHTML,/周一第1时段/);
 context.fetch=async path=>{assert.equal(path,'/my-transfer-options?old_slot_id=3');return response([{slot_id:8,team_name:'周二-一时段',start_time:'08:15',end_time:'09:55'}]);};
 element('#f-old_slot_id').value='3';
 run("openFixedTransfer()").then(()=>{
  assert.equal(element('#action-dialog').open,true);
  assert.match(element('#action-dialog').innerHTML,/申请更换固定班次/);
- assert.match(element('#f-new_slot_id').innerHTML,/周二-一时段/);
+ assert.match(element('#f-new_slot_id').innerHTML,/周二第1时段/);
  assert.doesNotMatch(element('#action-dialog').innerHTML,/name="new_date"/);
 }).catch(error=>{console.error(error);process.exitCode=1;});
-run("state.data.transfer=[{old_slot_id:3,first_status:'PENDING',final_status:'PENDING'}];schedulesPage()");
+run("state.data.transfer=[{old_slot_id:3,final_status:'PENDING'}];schedulesPage()");
 assert.match(element('#main').innerHTML,/换班审批中/);
 ''')
 
@@ -164,8 +173,30 @@ run("action('calendar-edit',1)");
 assert.match(element('#action-dialog').innerHTML,/执行周一的班表/);
 assert.match(element('#action-dialog').innerHTML,/停工/);
 run("closeDialog();schedulesPage();");
-assert.match(element('#main').innerHTML,/当前周（第 3 周）/);
-assert.match(element('#main').innerHTML,/每周一自动结算上周/);
+assert.match(element('#main').innerHTML,/第 3 周/);
+assert.doesNotMatch(element('#main').innerHTML,/每周一自动结算上周/);
+assert.doesNotMatch(element('#main').innerHTML,/当前周（第 3 周）/);
+''')
+
+    def test_schedule_todo_summary_and_all_unregistered_view(self):
+        self.js(r'''
+run(`state.role='SUPER';state.me={admin_id:1,status:'ACTIVE'};state.week='current';state.scheduleView='todo';
+state.data={semesters:[{semester_id:1,name:'秋季学期',start_date:'2026-09-07',end_date:'2026-09-27',end_week:3,current_week:3,phase:'ONGOING',calendar:[]}],
+slots:[{slot_id:3,team_name:'周一-一时段',weekday:1,start_time:'08:15',end_time:'09:55'}],
+schedules:[
+{schedule_id:1,student_id:'20260001',student_name:'甲',slot_id:3,semester_id:1,week_no:3,schedule_date:'2026-09-24',start_time:'08:15',end_time:'09:55',status:'ACTIVE',attendance_status:null},
+{schedule_id:2,student_id:'20260002',student_name:'乙',slot_id:3,semester_id:1,week_no:1,schedule_date:'2026-09-10',start_time:'08:15',end_time:'09:55',status:'ACTIVE',attendance_status:null},
+{schedule_id:3,student_id:'20260003',student_name:'丙',slot_id:3,semester_id:1,week_no:3,schedule_date:'2026-09-22',start_time:'08:15',end_time:'09:55',status:'COMPLETED',attendance_status:'LATE'}]};schedulesPage();`);
+assert.match(element('#main').innerHTML,/本周待登记 <b>1<\/b> 条/);
+assert.match(element('#main').innerHTML,/更早待补 <b>1<\/b> 条/);
+assert.match(element('#main').innerHTML,/第 3 周/);
+run("action('schedule-unregistered')");
+assert.match(element('#main').innerHTML,/全部未登记/);
+assert.match(element('#main').innerHTML,/2026-09-10/);
+assert.match(element('#main').innerHTML,/周一第1时段/);
+assert.doesNotMatch(element('#main').innerHTML,/2026-09-24<\/strong>.*2026-09-10/);
+run("action('schedule-back-weekly')");
+assert.match(element('#main').innerHTML,/本周待登记/);
 ''')
 
     def test_dated_student_schedule_never_offers_single_transfer(self):
@@ -278,34 +309,24 @@ assert.equal(requests[0].headers.Authorization,'Bearer test');
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_super_can_grant_a_volunteer_without_changing_student_membership(self):
+    def test_roster_does_not_offer_promoting_a_volunteer(self):
         self.js(r'''
 const requests=[];
 context.fetch=async(path,options)=>{requests.push({path,...options});return response({});};
 run(`state.token='current';state.role='SUPER';state.me={admin_id:1};refresh=async()=>{};
-state.data={students:[{student_id:'001',name:'<b>甲</b>',status:'ACTIVE',slots:[]}],
-admins:[],slots:[{slot_id:8,weekday:2,period_no:1,status:'ACTIVE',team_name:'周二-一时段',manager_admin_id:null}]};`);
-assert.match(run('rosterStudentTable(state.data.students)'),/设为普通管理员/);
+state.data={students:[{student_id:'001',name:'<b>甲</b>',status:'ACTIVE',slots:[]}],admins:[],slots:[]};`);
+assert.doesNotMatch(run('rosterStudentTable(state.data.students)'),/设为普通管理员/);
 run("action('promote-student','001')");
-assert.match(element('#action-dialog').innerHTML,/使用学号和现有志愿者密码/);
-assert.doesNotMatch(element('#action-dialog').innerHTML,/<b>/);
-assert.doesNotMatch(element('#action-dialog').innerHTML,/name="password"/);
-const form=actionForm({manage_8:'8',reason:'安排时段负责人'});
-documentHandlers.get('submit')({preventDefault(){},target:form}).then(()=>{
-  assert.equal(requests[0].path,'/students/001/administrator');
-  assert.equal(requests[0].method,'POST');
-  assert.deepEqual(JSON.parse(requests[0].body),{slot_ids:[8],reason:'安排时段负责人'});
-}).catch(error=>{console.error(error);process.exitCode=1;});
+assert.equal(requests.length,0);
 ''')
 
-    def test_manager_and_inactive_students_do_not_offer_admin_grant(self):
+    def test_no_role_offers_admin_grant_from_student_roster(self):
         self.js(r'''
 run("state.role='NORMAL';state.data={admins:[],students:[{student_id:'001',name:'甲',status:'ACTIVE'}]};");
 assert.doesNotMatch(run('rosterStudentTable(state.data.students)'),/设为普通管理员/);
 run("state.role='SUPER';state.data.students[0].status='QUIT';");
 assert.doesNotMatch(run('rosterStudentTable(state.data.students)'),/设为普通管理员/);
-run("state.data.students[0].status='ACTIVE';state.data.admins=[{admin_id:4,student_id:'001',role:'NORMAL',status:'ACTIVE'}];");
-assert.match(run('rosterStudentTable(state.data.students)'),/普通管理员/);
+run("state.data.students[0].status='ACTIVE';state.data.admins=[{admin_id:4,role:'NORMAL',status:'ACTIVE'}];");
 assert.doesNotMatch(run('rosterStudentTable(state.data.students)'),/data-action="promote-student"/);
 ''')
 
@@ -406,7 +427,7 @@ release(response({name:'管理员',admin_id:1,role:'SUPER'}));
 loading.then(()=>{
   assert.equal(run('state.page'),'schedules');
   assert.match(element('#main').innerHTML,/排班与考勤/);
-  assert.match(element('#main').innerHTML,/暂无具体日期排班/);
+  assert.match(element('#main').innerHTML,/尚未设置学期/);
   assert.doesNotMatch(element('#main').innerHTML,/正在读取/);
 }).catch(error=>{console.error(error);process.exitCode=1;});
 """)
@@ -418,15 +439,15 @@ context.fetch=async path=>response(path==='/auth/me'?{student_id:'20260001',name
 run("state.token='current';state.me={student_id:'20260001',name:'张三',status:'ACTIVE'};state.role='STUDENT';state.page='schedules';");
 run('refresh()').then(()=>{
   assert.equal(run('state.me.status'),'DISABLED');
-  assert.match(element('#main').innerHTML,/张三/);
+  assert.match(element('#main').innerHTML,/2030-01-02/);
   assert.doesNotMatch(element('#main').innerHTML,/data-action="(?:leave|transfer)"/);
 }).catch(error=>{console.error(error);process.exitCode=1;});
 """)
 
     def test_manager_can_search_names_without_global_student_directory(self):
         self.js(r"""
-run("state.me={name:'负责人',admin_id:1};state.role='NORMAL';state.search='张三';state.data={schedules:[{schedule_id:1,student_id:'20260001',student_name:'张三',team_name:'一分队',period_no:1,location:'图书馆',schedule_date:'2030-01-02',start_time:'10:00',end_time:'12:00',status:'ACTIVE'}]};schedulesPage();");
-assert.match(element('#main').innerHTML,/<td>张三<small>20260001/);
+run("state.me={name:'负责人',admin_id:1};state.role='NORMAL';state.search='张三';state.scheduleView='week';state.week='all';state.data={semesters:[{semester_id:1,name:'秋季学期',start_date:'2029-12-31',end_date:'2030-03-31',end_week:18,current_week:1,phase:'ONGOING',calendar:[]}],schedules:[{schedule_id:1,student_id:'20260001',student_name:'张三',team_name:'一分队',period_no:1,schedule_date:'2030-01-02',start_time:'10:00',end_time:'12:00',status:'ACTIVE'}]};schedulesPage();");
+assert.match(element('#main').innerHTML,/<td><strong>张三<\/strong><small>20260001/);
 assert.doesNotMatch(element('#main').innerHTML,/暂无服务安排/);
 """)
 
@@ -507,7 +528,7 @@ assert.match(run('scheduleActions(row)'),/登记考勤/);
     def test_stored_user_text_is_escaped_in_tables_and_application_dialogs(self):
         self.js(r"""
 context.dirty='<img src=x onerror="alert(1)">';
-run("state.me={student_id:'20260001',name:dirty,status:'ACTIVE'};state.role='STUDENT';state.data={students:[],slots:[{slot_id:1,team_name:dirty,period_no:1}],schedules:[{slot_id:1,schedule_id:1,student_id:'20260001',team_name:dirty,period_no:1,location:dirty,schedule_date:'2030-01-02',start_time:'10:00',end_time:'12:00',status:'ACTIVE'}]};");
+run("state.me={student_id:'20260001',name:dirty,status:'ACTIVE'};state.role='STUDENT';state.data={students:[],slots:[{slot_id:1,team_name:dirty,period_no:1}],schedules:[{slot_id:1,schedule_id:1,student_id:'20260001',team_name:dirty,period_no:1,schedule_date:'2030-01-02',start_time:'10:00',end_time:'12:00',status:'ACTIVE'}]};");
 const html=run('scheduleTable(state.data.schedules,false)');
 assert.doesNotMatch(html,/<img/);
 assert.match(html,/&lt;img/);
@@ -528,11 +549,15 @@ assert.match(html,/<dt>服务分钟数<\/dt><dd>0<\/dd>/);
     def test_password_reset_dialog_checks_confirmation_and_role(self):
         self.js(r"""
 run("state.role='SUPER';state.data={students:[{student_id:'001',name:'测试队员',status:'ACTIVE'}],admins:[{admin_id:7,account:'001',name:'测试队员',student_id:'001',role:'NORMAL',status:'ACTIVE'}],slots:[]};");
-assert.match(run('rosterStudentTable(state.data.students)'),/reset-student-password/);
+assert.doesNotMatch(run('rosterStudentTable(state.data.students)'),/reset-student-password/);
+run("openStudentProfile('001')");
+assert.match(element('#action-dialog').innerHTML,/reset-student-password/);
 run("state.tab='admins';rosterBasicsPage();");
-assert.match(element('#main').innerHTML,/reset-admin-password/);
+assert.doesNotMatch(element('#main').innerHTML,/reset-admin-password/);
+run("openAdminProfile(7)");
+assert.match(element('#action-dialog').innerHTML,/reset-admin-password/);
 run("action('reset-student-password','001');");
-assert.match(element('#action-dialog').innerHTML,/同步使用新密码/);
+assert.match(element('#action-dialog').innerHTML,/管理员账号与志愿者账号密码相互独立/);
 assert.throws(()=>run("modalSubmit({new_password:'NewPassword123!',confirm_password:'different',reason:'忘记密码'})"),/不一致/);
 context.fetch=async(path,opts)=>{
  assert.equal(path,'/students/001/reset-password');
@@ -540,10 +565,7 @@ context.fetch=async(path,opts)=>{
  return response({status:'UPDATED'});
 };
 run("modalSubmit({new_password:'NewPassword123!',confirm_password:'NewPassword123!',reason:'忘记密码'})").then(()=>{
- run("closeDialog();state.role='NORMAL';");
- assert.doesNotMatch(run('rosterStudentTable(state.data.students)'),/reset-student-password/);
- run("action('reset-admin-password',7);");
- assert.equal(element('#action-dialog').open,false);
+ run("closeDialog();");
 }).catch(error=>{console.error(error);process.exitCode=1;});
 """)
 
