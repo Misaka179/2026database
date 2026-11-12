@@ -509,6 +509,13 @@ function openReadOnlyDialog(title,content,subtitle=''){
  dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(title)}</h2>${subtitle?`<p>${esc(subtitle)}</p>`:''}</div><button class="close-button" type="button" data-action="close">关闭</button></header><div class="dialog-body">${content}</div>`;
  dialog.showModal();
 }
+function openReadOnlyDialog(title,content){
+ if(modalBusy||dialog.open)return;
+ previousFocus=document.activeElement;modalSubmit=null;modalVersion++;
+ dialog.classList.remove('collection-dialog');
+ dialog.innerHTML=`<header class="dialog-header"><h2 id="dialog-title">${esc(title)}</h2><button class="close-button" type="button" data-action="close">关闭</button></header><div class="dialog-body">${content}</div>`;
+ dialog.showModal();
+}
 function setModalBusy(busy){modalBusy=busy;dialog.querySelectorAll('[data-action="close"]').forEach(button=>button.disabled=busy);}
 function closeDialog(force=false){if(modalBusy&&!force)return;if(!dialog.open&&!modalSubmit)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();dialog.classList.remove('collection-dialog');dialog.innerHTML='';modalSubmit=null;const focus=previousFocus;previousFocus=null;focus?.focus?.();}
 function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength,minLength,icon}={}){
@@ -824,6 +831,7 @@ function loginView() {
           <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
         </div>
         <h2>欢迎回来</h2>
+        <p class="auth-sub">使用你的账号登录工作台。</p>
         <form class="auth-form" id="login-form" novalidate>
           <div class="auth-field">
             <label for="login-kind">登录身份</label>

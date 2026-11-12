@@ -223,9 +223,11 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
         with self.db.transaction(True) as c:
             # Students keep read access after leaving, so match the login rule:
             # student status is not re-checked, while a disabled admin is refused.
-            a=self.actor(c,actor,('STUDENT','SUPER','NORMAL'))
+            # Every role may manage its own password, including scoped LEAD accounts.
+            a=self.actor(c,actor,('STUDENT','SUPER','NORMAL','LEAD'))
+            linked_id=(a.get('student_id') or a.get('leader_student_id')) if a['_kind']=='admin' else None
             require(current_password != new_password, '密码与原密码一致，请设置不同的新密码', 400)
-            actual=a
+            actual=one(c,'SELECT password_hash FROM student WHERE student_id=%s',(linked_id,)) if linked_id else a
             require(actual and verify_password(current_password,actual['password_hash']),'当前密码不正确',401)
             require(isinstance(new_password,str) and 8<=len(new_password)<=128,
                     '密码长度必须为 8 至 128 个字符',422)

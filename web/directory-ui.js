@@ -47,8 +47,15 @@ async function openArchive(id,restore=false){
   if(!restore&&blockers.length)$('#action-dialog [type="submit"]').disabled=true;
  }catch(e){notify(e.message,true);}
 }
+async function groupsPage(){
+ const seq=++state.sequence;$('#main').innerHTML=heading('小组与成员','支持兼任；加入小组同时建立所属业务归属，离开小组不会删除历史。',state.role==='SUPER'?'<button class="btn primary" data-action="member-import">导入业务／小组名单</button>':'')+'<section class="panel" id="groups-result">正在读取…</section>';
+ try{const groups=await request('/business-groups');if(seq!==state.sequence)return;state.data.groups=groups;
+  $('#groups-result').innerHTML=table(['业务 / 小组','在队人数','操作'],groups.filter(g=>g.can_manage).map(g=>`<tr><td>${esc(g.business_name)}<small>${esc(g.name)}${g.business_status==='ARCHIVED'?'（已归档）':''}</small></td><td>${g.member_count}</td><td><button class="text-button" data-action="group-show" data-id="${g.group_id}">查看名单</button>${state.role==='SUPER'&&g.business_status==='ACTIVE'?`<button class="text-button" data-action="group-member" data-id="${g.group_id}">调整成员</button>`:''}</td></tr>`),'暂无可管理小组','请先申请或配置管理范围。');
+  if(state.role==='SUPER'){const bids=new Set(groups.map(g=>g.business_id));const ungrouped=(state.data.students||[]).filter(p=>p.status==='ACTIVE'&&(p.business_ids||[]).some(b=>bids.has(b)&&!(p.groups||[]).some(g=>g.business_id===b)));$('#groups-result').insertAdjacentHTML('beforeend','<header class="panel-header"><h2>干部及干事 · 未分组成员</h2></header>'+table(['姓名','学号'],ungrouped.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.student_id)}</td></tr>`),'暂无未分组成员','历史成员不会被自动分配小组。'));}
+ }catch(e){if(seq===state.sequence)$('#groups-result').textContent=e.message;}
+}
 async function showGroupMembers(id){const seq=state.sequence,session=state.sessionVersion;try{const rows=await request(`/business-groups/${id}/members`);if(seq!==state.sequence||session!==state.sessionVersion||state.page!=='groups')return;const g=rowsOf(state.data.groups,'group_id',id);if(!g)return;openReadOnlyDialog(g.name,table(['姓名','学号','生效日期','结束日期'],rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.student_id)}</td><td>${esc(r.effective_from)}</td><td>${esc(r.effective_until||'持续有效')}</td></tr>`),'暂无小组成员','该小组当前没有成员。'));}catch(e){if(seq===state.sequence&&session===state.sessionVersion)notify(e.message,true);}}
-function directoryAction(name,id,kind){
+function directoryAction(name,id){
  if(name==='nav-toggle'){toggleNavGroup(id);return true;}
  if(name==='business-create'){openBusinessCreate();return true;}
  if(name==='business-archive'||name==='business-restore'){openArchive(id,name==='business-restore');return true;}

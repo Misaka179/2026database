@@ -1017,6 +1017,15 @@ dialog {
   overflow: hidden;
 }
 
+dialog:not([open]) {
+  display: none;
+}
+
+dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
 dialog::backdrop {
   background: rgba(16, 24, 20, 0.42);
   backdrop-filter: none;

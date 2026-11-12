@@ -135,7 +135,7 @@
       try {
         await postJson('/auth/password/reset-request', body);
         resetForm.reset();
-        showFeedback('reset-feedback', '重置申请已提交，管理员核实后会通过通知告知新密码。', 'success');
+        showFeedback('reset-feedback', '重置申请已提交。管理员核实身份后会为你重置密码，并通过站内通知告知。', 'success');
       } catch (error) {
         showFeedback('reset-feedback', (error && error.message) || '提交失败，请稍后重试。', 'error');
       } finally {
