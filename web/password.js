@@ -124,11 +124,10 @@
         kind: data.get('kind'),
         account: String(data.get('account') || '').trim(),
         name: String(data.get('name') || '').trim(),
-        phone: String(data.get('phone') || '').trim(),
         reason: String(data.get('reason') || '').trim()
       };
       if (!body.account || !body.name) {
-        showFeedback('reset-feedback', '请填写学号/管理员账号与姓名，便于管理员核实身份。', 'error');
+        showFeedback('reset-feedback', '请填写学号/账号与姓名。', 'error');
         return;
       }
       var original = button.innerHTML;

@@ -1,23 +1,34 @@
 'use strict';
-const navGroups=[['people','业务与人员',['leaders','lead-workspace','businesses','groups','basics','members','slots']],['work','排班与考勤',['schedules','semesters']],['hours','时长与信用',['collections','hours','specialty','credit']],['approvals','申请与审批',['applications','collection-management']],['system','系统管理',['logs']]];
+// 按业务逻辑分组：排班服务、时长与信用、队员与业务（操作日志独立）
+const navGroups=[
+  ['schedule','排班服务',['semesters','schedules','applications']],
+  ['hours','时长与信用',['collections','hours','credit']],
+  ['org','队员与业务',['basics','businesses','members']]
+];
 function navigationHtml(available){
  let saved={};try{saved=JSON.parse(localStorage.getItem('nav-folds-'+state.role)||'{}');}catch{}
- const link=([id,title])=>{const navIcon=id==='overview'?'home':id==='inbox'?'inbox':'';return `<button class="nav-link ${state.page===id?'active':''}" data-page="${id}" ${state.page===id?'aria-current="page"':''}>${navIcon?uiIcon(navIcon):''}${title}${id==='inbox'?'<span class="badge pending" data-inbox-count hidden></span>':''}</button>`;};
- return ['overview','inbox'].map(id=>available.find(n=>n[0]===id)).filter(Boolean).map(link).join('')+navGroups.map(([id,title,items])=>{
+ const groupTitle=(id,title)=>({STUDENT:{schedule:'我的服务',hours:'我的时长与信用',org:'我的组织'},NORMAL:{schedule:'排班与审批',hours:'时长与征集',org:'业务与队员'}}[state.role]?.[id])||title;
+ const link=([id,title])=>{const navIcon=id==='overview'?'home':id==='inbox'?'inbox':'';return `<button class="nav-link ${state.page===id?'active':''}" data-page="${id}" ${state.page===id?'aria-current="page"':''}>${navIcon?uiIcon(navIcon):''}${navLabel([id,title])}${id==='inbox'?'<span class="badge pending" data-inbox-count hidden></span>':''}</button>`;};
+ const pinnedLinks = ['overview','inbox'].map(id=>available.find(n=>n[0]===id)).filter(Boolean).map(link).join('');
+ const groupsHtml = navGroups.map(([id,title,items])=>{
   const children=items.map(k=>available.find(n=>n[0]===k)).filter(Boolean);if(!children.length)return '';
   const open=items.includes(state.page)||saved[id]===true;
-  return `<div class="nav-group"><button class="nav-group-toggle" data-action="nav-toggle" data-id="${id}" aria-expanded="${open}" aria-controls="nav-${id}">${title}<span aria-hidden="true">${open?'⌄':'›'}</span></button><div id="nav-${id}" class="nav-children" ${open?'':'hidden'}>${children.map(link).join('')}</div></div>`;
+  return `<div class="nav-group"><button class="nav-group-toggle" data-action="nav-toggle" data-id="${id}" aria-expanded="${open}" aria-controls="nav-${id}">${groupTitle(id,title)}<span class="nav-caret" aria-hidden="true">${uiIcon('chevron-down')}</span></button><div id="nav-${id}" class="nav-children" ${open?'':'hidden'}>${children.map(link).join('')}</div></div>`;
  }).join('');
+ // 操作日志独立在最底部
+ const logsPage = available.find(n=>n[0]==='logs');
+ const logsLink = logsPage ? `<div class="nav-separator"></div><button class="nav-link nav-link-plain ${state.page===logsPage[0]?'active':''}" data-page="${logsPage[0]}">${navLabel(logsPage)}</button>` : '';
+ return pinnedLinks + groupsHtml + logsLink;
 }
-function updateNavigation(){const el=document.querySelector('.nav-list');if(el){el.innerHTML=navigationHtml(nav.filter(n=>n[2].includes(state.role)));updateInboxBadge();}}
-function toggleNavGroup(id){let saved={};try{saved=JSON.parse(localStorage.getItem('nav-folds-'+state.role)||'{}');}catch{}const el=document.querySelector(`[data-action="nav-toggle"][data-id="${id}"]`);const open=el.getAttribute('aria-expanded')!=='true';saved[id]=open;localStorage.setItem('nav-folds-'+state.role,JSON.stringify(saved));el.setAttribute('aria-expanded',String(open));el.querySelector('span').textContent=open?'⌄':'›';document.getElementById('nav-'+id).hidden=!open;}
+function updateNavigation(){const el=document.querySelector('.nav-list');if(el){el.innerHTML=navigationHtml(navAvailable());updateInboxBadge();}}
+function toggleNavGroup(id){let saved={};try{saved=JSON.parse(localStorage.getItem('nav-folds-'+state.role)||'{}');}catch{}const el=document.querySelector(`[data-action="nav-toggle"][data-id="${id}"]`);const open=el.getAttribute('aria-expanded')!=='true';saved[id]=open;localStorage.setItem('nav-folds-'+state.role,JSON.stringify(saved));el.setAttribute('aria-expanded',String(open));document.getElementById('nav-'+id).hidden=!open;}
 const activeBusinesses=()=> (state.data.businesses||[]).filter(b=>b.status!=='ARCHIVED');
-function groupFilter(value=state.groupId){return `<div class="field group-filter"><label for="group-filter">小组</label><select id="group-filter" name="group_id"><option value="">全部小组</option><option value="0" ${String(value)==='0'?'selected':''}>未分组</option>${(state.data.groups||[]).filter(g=>!state.businessId||String(g.business_id)===String(state.businessId)).map(g=>`<option value="${g.group_id}" ${String(value)===String(g.group_id)?'selected':''}>${esc(g.name)}</option>`).join('')}</select></div>`;}
+function groupFilter(value=state.groupId){return '';}
 function slotFields(prefix=''){
  const admins=(state.data.admins||[]).filter(a=>a.role==='NORMAL'&&a.status==='ACTIVE');
- return field(prefix+'weekday','星期',{options:[1,2,3,4,5,6,7].map(d=>[d,'周'+'一二三四五六日'[d-1]])})+field(prefix+'period_no','时段编号',{type:'number',min:1,max:100,step:1})+field(prefix+'start_time','开始时间',{type:'time'})+field(prefix+'end_time','结束时间',{type:'time'})+field(prefix+'service_minutes','认定分钟',{type:'number',min:1,max:1440,step:1})+field(prefix+'need_num','容量',{type:'number',min:1,max:10000,step:1})+field(prefix+'manager_admin_id','时段管理员',{options:admins.map(a=>[a.admin_id,`${a.name}（${a.account}）`]),full:true})+field(prefix+'location','服务地点',{required:false,full:true,maxLength:200});
+ return field(prefix+'weekday','星期',{options:[1,2,3,4,5,6,7].map(d=>[d,'周'+'一二三四五六日'[d-1]])})+field(prefix+'period_no','时段编号',{type:'number',min:1,max:100,step:1})+field(prefix+'start_time','开始时间',{type:'time'})+field(prefix+'end_time','结束时间',{type:'time'})+field(prefix+'service_minutes','认定分钟',{type:'number',min:1,max:1440,step:1})+field(prefix+'need_num','建议人数',{type:'number',min:1,max:10000,step:1})+field(prefix+'manager_admin_id','时段管理员',{options:admins.map(a=>[a.admin_id,`${a.name}（${a.account}）`]),full:true});
 }
-function slotValues(v,prefix=''){const x={};for(const k of ['weekday','period_no','service_minutes','need_num','manager_admin_id'])x[k]=Number(v[prefix+k]);for(const k of ['start_time','end_time','location'])x[k]=v[prefix+k]||'';return x;}
+function slotValues(v,prefix=''){const x={};for(const k of ['weekday','period_no','service_minutes','need_num','manager_admin_id'])x[k]=Number(v[prefix+k]);for(const k of ['start_time','end_time'])x[k]=v[prefix+k]||'';return x;}
 function scrollableDialog(){dialog.classList.add('collection-dialog');dialog.addEventListener('close',()=>dialog.classList.remove('collection-dialog'),{once:true});}
 function openBusinessCreate(){
  openDialog('新增业务','固定排班业务沿用学期日历和默认出勤结算，启用前不补计时长。',field('name','业务名称',{full:true,maxLength:100})+field('kind','业务类型',{options:[['EVENT','非固定业务（时长征集 / 临时服务）'],['FIXED','固定排班业务']],full:true})+'<div class="field full" id="new-business-slots" hidden><div id="new-slot-rows"></div><button class="btn" type="button" id="add-slot-row">添加时段</button></div>',v=>{
@@ -52,34 +63,14 @@ function directoryAction(name,id){
  if(name==='business-slot'){openDialog('添加固定时段','同一业务、同一天内的时段不能重叠。',slotFields(),v=>send(`/businesses/${id}/slots`,slotValues(v)));scrollableDialog();return true;}
  if(name==='group-show'){showGroupMembers(id);return true;}
  if(name==='group-member'){openDialog('调整小组成员','允许兼任其他小组，不追改历史归属。',field('student_id','学号',{maxLength:32})+field('active','操作',{options:[['true','加入'],['false','退出小组']]})+field('effective_date','生效日期',{type:'date',min:getDate(),value:getDate()})+reasonField(),v=>send(`/business-groups/${id}/members/${encodeURIComponent(v.student_id)}`,{active:v.active==='true',effective_date:v.effective_date,reason:v.reason},'PUT'));return true;}
- if(name==='member-import'){if(state.role==='SUPER')openMemberImport();return true;}
+ if(name==='member-import'){openImportDialog('GROUP',Number(id));return true;}
+ if(name==='excel-import'){openImportDialog(String(kind||'BUSINESS').toUpperCase(),id?Number(id):null);return true;}
+ if(name==='import-records'){openImportRecords(Number(id));return true;}
+ if(name==='revert-import'){revertImport(id);return true;}
  return false;
 }
-function openMemberImport(){
- let encoded='',preview=null,mappings={},decisions={};
- openDialog('导入业务／小组名单','识别各工作表中的姓名、学号、学院。只建立归属，不计服务时长。',
- '<div class="field full"><label for="member-file">名单 Excel</label><input id="member-file" type="file" accept=".xlsx"></div>'+field('initial_password','新账号初始密码',{type:'password',required:false,full:true,minLength:8,maxLength:128})+'<div class="field full"><button type="button" class="btn" id="member-preview">读取 / 重新核对</button><div id="member-import-results"></div></div>',async v=>{
-  if(preview?.replayed)return preview;
-  if(!preview)await refreshPreview();
-  if(preview.errors.length)throw new Error('仍有待核对记录，请处理后重新核对。');
-  return send('/member-imports',{file_base64:encoded,mappings,decisions,initial_password:v.initial_password||null,commit:true});
- },'确认导入');
- dialog.classList.add('collection-dialog');dialog.addEventListener('close',()=>dialog.classList.remove('collection-dialog'),{once:true});
- $('#member-file').onchange=()=>{encoded='';preview=null;mappings={};decisions={};$('#member-import-results').innerHTML='';};
- const targetOptions=()=>[['','跳过此表'],...activeBusinesses().filter(b=>b.kind==='EVENT').flatMap(b=>[[String(b.business_id),b.name+'（未分组）'],...(state.data.groups||[]).filter(g=>g.business_id===b.business_id).map(g=>[`${b.business_id}:${g.group_id}`,b.name+' / '+g.name])])];
- async function refreshPreview(){
-  const btn=$('#member-preview');btn.disabled=true;
-  try{const file=$('#member-file').files[0];if(!file||file.size>8*1024*1024)throw new Error('请选择不超过8MB的 .xlsx 文件。');if(!encoded)encoded=await fileBase64(file);
-   preview=await send('/member-imports',{file_base64:encoded,mappings,decisions});
-   $('#member-import-results').innerHTML=preview.replayed?'<p class="notice">本批次已导入，不会重复添加。</p>':`<p>可导入 ${preview.eligible} 条，新账号 ${preview.new_students} 个，跳过 ${preview.skipped} 条，待核对 ${preview.errors.length} 条。</p>`+preview.sheets.map(s=>`<label class="import-sheet">${esc(s.name)}（${s.count}行）<select data-sheet-map="${esc(s.name)}">${targetOptions().map(([v,n])=>`<option value="${v}" ${v===(s.target?String(s.target.business_id)+(s.target.group_id?':'+s.target.group_id:''):'')?'selected':''}>${esc(n)}</option>`).join('')}</select></label>`).join('')+table(['来源','姓名 / 原学号','核对','处理'],preview.rows.map(r=>`<tr><td>${esc(r.sheet)} 第${r.row}行</td><td>${esc(r.name)}<small>${esc(r.student_id||'缺学号')}</small></td><td class="wrap">${esc(r.error|| (r.skipped?'已跳过':'有效'))}${r.candidates?.length?'<small>同名账号：'+r.candidates.map(p=>esc(p.student_id)).join('、')+'</small>':''}</td><td><label><input type="checkbox" data-row-skip="${esc(r.key)}" ${decisions[r.key]?.skip?'checked':''}>跳过</label><input aria-label="${esc(r.key)}核对后学号" data-row-id="${esc(r.key)}" value="${esc(decisions[r.key]?.student_id||'')}" placeholder="核对后填写学号"><label><input type="checkbox" data-row-confirm="${esc(r.key)}" ${decisions[r.key]?.confirmed?'checked':''}>已核实身份</label></td></tr>`));
-  }catch(e){notify(e.message,true);throw e;}finally{btn.disabled=false;}
- }
- $('#member-preview').onclick=()=>refreshPreview().catch(()=>{});
- $('#member-import-results').onchange=e=>{const x=e.target;
-  if(x.dataset.sheetMap!==undefined){const [b,g]=x.value.split(':');mappings[x.dataset.sheetMap]=b?{business_id:Number(b),group_id:g?Number(g):null}:null;}
-  for(const [key,field] of [['rowSkip','skip'],['rowId','student_id'],['rowConfirm','confirmed']])if(x.dataset[key]!==undefined){const k=x.dataset[key];decisions[k]??={};decisions[k][field]=field==='student_id'?x.value.trim():x.checked;}
-  preview=null;
- };
+function openMemberImport(preset){
+ openImportDialog(preset&&preset.group_id?'GROUP':'BUSINESS',preset&&preset.group_id?Number(preset.group_id):null);
 }
 
-document.addEventListener('change',e=>{if(e.target.id==='group-filter'){state.groupId=e.target.value;hoursPage();}if(e.target.id==='business-filter'){state.groupId='';}});
+document.addEventListener('change',e=>{if(e.target.id==='business-filter'){state.groupId='';}});

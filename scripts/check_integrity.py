@@ -19,7 +19,7 @@ def check(db=None):
       'unapproved_claim_with_valid_ledger':'''SELECT COUNT(*) n FROM hour_submission h JOIN attendance a ON a.schedule_id=h.schedule_id JOIN service_record r ON r.attendance_id=a.attendance_id WHERE h.status<>'APPROVED' AND r.record_status='VALID' AND r.service_minutes>0''',
       'group_snapshot_mismatch':'''SELECT COUNT(*) n FROM hour_submission h JOIN collection_item i ON i.item_id=h.item_id JOIN hour_collection c ON c.collection_id=i.collection_id JOIN schedule s ON s.schedule_id=h.schedule_id WHERE NOT(s.group_id <=> c.group_id)''',
       'archived_business_open_window':"SELECT COUNT(*) n FROM business b JOIN business_window w ON w.business_id=b.business_id WHERE b.status='ARCHIVED' AND w.active_until IS NULL",
-      'active_fixed_slots_without_manager':'''SELECT COUNT(*) n FROM service_slot s JOIN business b ON b.business_id=s.business_id LEFT JOIN admin a ON a.admin_id=s.manager_admin_id WHERE b.status='ACTIVE' AND s.status='ACTIVE' AND s.schedule_kind IN ('FIXED','WEEKLY') AND (a.admin_id IS NULL OR a.status<>'ACTIVE')''',
+      'active_fixed_slots_without_manager':'''SELECT COUNT(*) n FROM service_slot s JOIN business b ON b.business_id=s.business_id LEFT JOIN admin a ON a.admin_id=s.manager_admin_id WHERE b.status='ACTIVE' AND s.schedule_kind IN ('FIXED','WEEKLY') AND (a.admin_id IS NULL OR a.status<>'ACTIVE')''',
     }
     with db.transaction() as c:
         results={name:int(one(c,sql)['n']) for name,sql in queries.items()}
@@ -27,7 +27,7 @@ def check(db=None):
         result={'checks':results,'valid_records':int(totals['records']),'valid_minutes':int(totals['minutes']),
                 'tables':int(one(c,'SELECT COUNT(*) n FROM information_schema.tables WHERE table_schema=DATABASE()')['n']),
                 'businesses':all_rows(c,'SELECT status,COUNT(*) count FROM business GROUP BY status'),
-                'unassigned_collection_businesses':all_rows(c,"SELECT b.name FROM business b WHERE b.kind='EVENT' AND b.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM collection_manager m JOIN admin a ON a.admin_id=m.admin_id WHERE m.business_id=b.business_id AND a.status='ACTIVE') AND NOT EXISTS(SELECT 1 FROM collection_group_manager m JOIN business_group g ON g.group_id=m.group_id JOIN admin a ON a.admin_id=m.admin_id WHERE g.business_id=b.business_id AND a.status='ACTIVE')")}
+                'unassigned_collection_businesses':all_rows(c,"SELECT b.name FROM business b WHERE b.kind='EVENT' AND b.status='ACTIVE' AND b.total_manager_admin_id IS NULL")}
     result['all_checks_passed']=not any(results.values())
     return result
 

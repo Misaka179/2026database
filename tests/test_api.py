@@ -84,7 +84,7 @@ class APIIntegrationTests(unittest.TestCase):
         return {
             "team_name": "API测试分队", "period_no": 2,
             "start_time": "16:00", "end_time": "18:00",
-            "location": "图书馆二楼", "need_num": 2,
+            "need_num": 2,
             "manager_admin_id": self.seed["normal"]["id"],
         }
 
@@ -101,6 +101,8 @@ class APIIntegrationTests(unittest.TestCase):
         with self.service.db.transaction() as c:
             old=one(c,'SELECT slot_id FROM service_slot WHERE weekday=1 AND period_no=1')['slot_id']
             target=one(c,'SELECT slot_id FROM service_slot WHERE weekday=2 AND period_no=1')['slot_id']
+            for admin in (self.seed['normal']['id'],self.seed['other_admin']['id']):
+                c.execute('UPDATE service_slot SET manager_admin_id=NULL WHERE manager_admin_id=%s',(admin,))
         self.service.configure_slot(self.seed['super'],old,self.seed['normal']['id'],20)
         self.service.configure_slot(self.seed['super'],target,self.seed['other_admin']['id'],20)
         self.service.set_memberships(self.seed['super'],'20260001',[old])
@@ -164,41 +166,33 @@ class APIIntegrationTests(unittest.TestCase):
         self.check(self.client.post("/applications/transfer", headers=self.headers(), json={
             "old_schedule_id": other_id, "new_slot_id": self.seed["other_slot"],
             "new_date": "2030-01-03", "reason": "尝试修改他人排班"
-        }), 410)
+        }), 405)
         self.assertEqual(self.check(self.client.get("/applications/leave", headers=self.headers())), [])
         self.assertEqual(self.check(self.client.get("/applications/transfer", headers=self.headers())), [])
 
-    def test_normal_admin_cannot_final_approve_or_change_credit_rule(self):
+    def test_normal_admin_can_single_review_and_cannot_change_credit_rule(self):
         old_id, transfer_id = self.create_transfer()
         self.check(self.client.post(
-            f"/applications/transfer/{transfer_id}/first", headers=self.headers("admin1"),
+            f"/applications/transfer/{transfer_id}/decision", headers=self.headers("admin1"),
             json={"approved": True}
         ))
-        self.check(self.client.post(
-            f"/applications/transfer/{transfer_id}/final", headers=self.headers("admin1"),
-            json={"approved": True}
-        ), 403)
         self.check(self.client.put("/credit-rules/LATE", headers=self.headers("admin1"), json={
             "deduct_score": 1, "reason": "普通管理员尝试修改信用规则"
         }), 403)
         applications = self.check(self.client.get("/applications/transfer", headers=self.headers()))
-        self.assertEqual(applications[0]["final_status"], "PENDING")
-        schedules = self.check(self.client.get("/schedules", headers=self.headers()))
-        self.assertEqual([(row["schedule_id"], row["status"]) for row in schedules], [(old_id, "ACTIVE")])
+        self.assertEqual(applications[0]["final_status"], "APPROVED")
         rules = self.check(self.client.get("/credit-rules", headers=self.headers("super")))
         self.assertEqual(len([r for r in rules if r['status']=='ACTIVE']), 2)
         self.assertEqual(next(row for row in rules if row["violation_type"] == "LATE")["deduct_score"], 2)
 
-    def test_fixed_transfer_requires_two_stages_and_updates_membership(self):
+    def test_fixed_transfer_single_review_updates_membership(self):
         old_id,tid=self.create_transfer()
-        final_path=f'/applications/transfer/{tid}/final'
-        self.check(self.client.post(final_path,headers=self.headers('super'),json={'approved':True}),409)
-        self.check(self.client.post(f'/applications/transfer/{tid}/first',headers=self.headers('admin1'),json={'approved':True}))
-        result=self.check(self.client.post(final_path,headers=self.headers('super'),json={'approved':True}))
+        decision_path=f'/applications/transfer/{tid}/decision'
+        result=self.check(self.client.post(decision_path,headers=self.headers('super'),json={'approved':True}))
         self.assertTrue(result['fixed_membership_updated'])
         members=self.check(self.client.get('/my-fixed-slots',headers=self.headers()))
         self.assertEqual([r['weekday'] for r in members],[2])
-        self.assertTrue(self.check(self.client.post(final_path,headers=self.headers('super'),json={'approved':True}))['replayed'])
+        self.assertTrue(self.check(self.client.post(decision_path,headers=self.headers('admin1'),json={'approved':True}))['replayed'])
         self.assertEqual(len(self.check(self.client.get('/schedules',headers=self.headers()))),1)
 
     def test_invalid_dates_and_extra_actor_fields_are_rejected(self):
@@ -260,16 +254,17 @@ class APIIntegrationTests(unittest.TestCase):
         self.assertNotIn('password_hash',json.dumps(logs))
 
     def test_password_reset_linked_accounts_and_independent_admin(self):
-        self.service.promote_student(self.seed['super'],'20260001','测试关联身份',[])
-        with self.service.db.transaction() as c:
-            c.execute('SELECT admin_id FROM admin WHERE student_id=%s',('20260001',))
-            linked=c.fetchone()['admin_id']
+        admin=self.service.create_admin(self.seed['super'],'独立管理员','independent-admin','Admin-Old-2026!')['admin_id']
         sup=self.headers('super')
-        for path,password in [('/students/20260001/reset-password','Student-New-2026!'),
-                              (f'/admins/{linked}/reset-password','Admin-New-2026!')]:
-            self.check(self.client.post(path,json={'new_password':password,'reason':'核验关联账号'},headers=sup))
-            for kind in ('student','admin'):
-                self.check(self.client.post('/auth/login',json={'kind':kind,'account':'20260001','password':password}))
+        self.check(self.client.post('/students/20260001/reset-password',
+            json={'new_password':'Student-New-2026!','reason':'核验学生账号'},headers=sup))
+        self.check(self.client.post('/auth/login',json={'kind':'student','account':'20260001','password':'Student-New-2026!'}))
+        self.check(self.client.post('/auth/login',json={'kind':'admin','account':'independent-admin','password':'Admin-Old-2026!'}))
+        self.check(self.client.post(f'/admins/{admin}/reset-password',
+            json={'new_password':'Admin-New-2026!','reason':'核验管理员账号'},headers=sup))
+        self.check(self.client.post('/auth/login',json={'kind':'admin','account':'independent-admin','password':'Admin-New-2026!'}))
+        self.check(self.client.post('/auth/login',json={'kind':'admin','account':'independent-admin','password':'Admin-Old-2026!'}),401)
+        self.check(self.client.post('/auth/login',json={'kind':'student','account':'20260001','password':'Student-New-2026!'}))
         self.check(self.client.post(f"/admins/{self.seed['normal']['id']}/reset-password",
             json={'new_password':'Independent-2026!','reason':'独立管理员重置'},headers=sup))
         self.check(self.client.post('/auth/login',json={'kind':'admin','account':'admin1','password':'Independent-2026!'}))

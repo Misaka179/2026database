@@ -37,15 +37,13 @@ CREATE TABLE service_slot (
     period_no INT NOT NULL,
     start_time TIME NOT NULL,
     end_time TIME NOT NULL,
-    location VARCHAR(200) NOT NULL,
     need_num INT NOT NULL,
     service_minutes INT NOT NULL,
     manager_admin_id BIGINT UNSIGNED NOT NULL,
-    status ENUM('ACTIVE', 'DISABLED') NOT NULL DEFAULT 'ACTIVE',
     PRIMARY KEY (slot_id),
     CONSTRAINT fk_slot_manager FOREIGN KEY (manager_admin_id)
         REFERENCES admin (admin_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    INDEX idx_slot_manager_status (manager_admin_id, status)
+    INDEX idx_slot_manager (manager_admin_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE schedule (
@@ -130,36 +128,27 @@ CREATE TABLE leave_application (
 CREATE TABLE transfer_application (
     transfer_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     student_id VARCHAR(32) NOT NULL,
-    old_schedule_id BIGINT UNSIGNED NOT NULL,
+    old_slot_id BIGINT UNSIGNED NOT NULL,
     new_slot_id BIGINT UNSIGNED NOT NULL,
-    new_date DATE NOT NULL,
     reason VARCHAR(1000) NOT NULL,
     apply_time DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    first_admin_id BIGINT UNSIGNED NULL,
-    first_status ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
-    first_time DATETIME(6) NULL,
     final_admin_id BIGINT UNSIGNED NULL,
     final_status ENUM('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED') NOT NULL DEFAULT 'PENDING',
     final_time DATETIME(6) NULL,
-    new_schedule_id BIGINT UNSIGNED NULL,
     active_marker TINYINT GENERATED ALWAYS AS
-        (CASE WHEN first_status <> 'REJECTED' AND final_status = 'PENDING' THEN 1 ELSE NULL END) STORED,
+        (CASE WHEN final_status = 'PENDING' THEN 1 ELSE NULL END) STORED,
     PRIMARY KEY (transfer_id),
-    UNIQUE KEY uq_transfer_pending (old_schedule_id, active_marker),
+    UNIQUE KEY uq_fixed_transfer_pending (student_id, old_slot_id, active_marker),
     CONSTRAINT fk_transfer_student FOREIGN KEY (student_id)
         REFERENCES student (student_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT fk_transfer_old_schedule_student FOREIGN KEY (old_schedule_id, student_id)
-        REFERENCES schedule (schedule_id, student_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    CONSTRAINT fk_transfer_old_slot FOREIGN KEY (old_slot_id)
+        REFERENCES service_slot (slot_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     CONSTRAINT fk_transfer_slot FOREIGN KEY (new_slot_id)
         REFERENCES service_slot (slot_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT fk_transfer_first_admin FOREIGN KEY (first_admin_id)
-        REFERENCES admin (admin_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     CONSTRAINT fk_transfer_final_admin FOREIGN KEY (final_admin_id)
         REFERENCES admin (admin_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
-    CONSTRAINT fk_transfer_new_schedule_student FOREIGN KEY (new_schedule_id, student_id)
-        REFERENCES schedule (schedule_id, student_id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     INDEX idx_transfer_student_time (student_id, apply_time),
-    INDEX idx_transfer_approval (final_status, first_status, apply_time)
+    INDEX idx_transfer_approval (final_status, apply_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE withdrawal_application (

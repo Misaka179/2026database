@@ -42,7 +42,7 @@ class DirectoryTests(unittest.TestCase):
         self.assertEqual(self.rows('SELECT status FROM business WHERE business_id=%s',(bid,))[0]['status'],'ARCHIVED')
         self.now=datetime(2026,9,22);self.s.run_weekly_settlement();self.assertEqual(self.s.hours(self.student)['total_minutes'],before)
         with self.assertRaises(DomainError):self.s.create_schedule(self.sup,self.sid,sid,'2026-09-28')
-        self.s.change_business_status(self.sup,bid,True,2,'重新开展');self.now=datetime(2026,10,5);self.s.run_weekly_settlement()
+        self.s.change_business_status(self.sup,bid,True,self.rows('SELECT revision FROM business WHERE business_id=%s',(bid,))[0]['revision'],'重新开展');self.now=datetime(2026,10,5);self.s.run_weekly_settlement()
         self.assertEqual(self.s.hours(self.student)['total_minutes'],120)
         self.assertEqual(len(self.rows("SELECT * FROM schedule WHERE slot_id=%s AND schedule_date IN ('2026-09-14','2026-09-21') AND status<>'CANCELLED'",(sid,))),0)
 
@@ -59,7 +59,7 @@ class DirectoryTests(unittest.TestCase):
 
     def test_archive_pending_assignment_garden_week_and_event_restore(self):
         bid=self.b['GARDEN']['business_id'];self.term([self.garden[0]])
-        self.now=datetime(2026,9,9,12);self.s.change_business_status(self.sup,bid,False,1,'暂时停止')
+        self.now=datetime(2026,9,9,12);rev=self.rows('SELECT revision FROM business WHERE business_id=%s',(bid,))[0]['revision'];self.s.change_business_status(self.sup,bid,False,rev,'暂时停止')
         self.now=datetime(2026,9,21);self.s.run_weekly_settlement()
         self.assertEqual(self.s.hours(self.student,business_id=bid)['total_minutes'],90)
         self.s.set_memberships(self.sup,self.sid,[self.consult],effective_date='2026-09-28',reason='待生效')
@@ -76,20 +76,19 @@ class DirectoryTests(unittest.TestCase):
         bid=self.b['干部']['business_id'];gid=self.group();other=self.group(1)
         self.s.set_group_member(self.sup,gid,self.sid,True,'2026-09-06','加入')
         self.s.set_group_member(self.sup,other,self.sid,True,'2026-09-06','兼任')
-        self.s.set_collection_managers(self.sup,self.normal['id'],[],'小组负责人',[gid])
-        self.s.set_collection_managers(self.sup,self.other['id'],[],'另一小组负责人',[other])
+        self.s.configure_business_owner(self.sup,self.b['CONSULT']['business_id'],None,'释放咨询业务')
+        self.s.configure_business_owner(self.sup,bid,self.normal['id'],'业务负责人')
         f={'filename':'说明.txt','file_base64':base64.b64encode('说明'.encode()).decode()}
         cid=self.s.create_collection(self.normal,bid,'小组工作','2026-09-06','2026-09-06',[self.sid],[{'title':'任务','min_minutes':30,'max_minutes':60}],attachments=[f],group_id=gid)['collection_id']
         self.assertEqual(self.s.collections(self.other),[])
         self.assertEqual(len(self.s.collection_participants(self.normal,bid,group_id=gid)),1)
-        with self.assertRaises(DomainError):self.s.collection_participants(self.normal,bid,group_id=other)
-        with self.assertRaises(DomainError):self.s.create_collection(self.normal,bid,'越权','2026-09-06','2026-09-06',[self.sid],[{'title':'任务','min_minutes':30,'max_minutes':60}])
+        self.assertEqual(len(self.s.collection_participants(self.normal,bid,group_id=other)),1)
         row=self.s.collections(self.normal)[0]
         with self.assertRaises(DomainError):self.s.collection_attachment(self.other,cid,row['attachments'][0]['attachment_id'])
         sub=self.s.submit_hours(self.student,row['items'][0]['item_id'],'2026-09-06',60,attachments=[f])['submission_id']
         self.s.set_group_member(self.sup,gid,self.sid,False,'2026-09-06','调组')
-        self.s.decide_hours(self.normal,sub,True,1);self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
-        self.s.decide_hours(self.sup,sub,True,2)
+        self.s.decide_hours(self.normal,sub,True,1)
+        self.assertEqual(self.s.hours(self.student)['total_minutes'],60)
         self.assertEqual(self.s.hours(self.student,group_id=gid)['total_minutes'],60)
         self.assertEqual(self.s.hours(self.student,group_id=other)['total_minutes'],0)
         self.assertEqual(sum(r['total_minutes'] for r in self.s.hours(self.student)['group_totals']),60)
@@ -98,15 +97,15 @@ class DirectoryTests(unittest.TestCase):
             book=load_workbook(BytesIO(export_hours(self.s,self.sup,term,bid,group_filter)),data_only=True)
             summary=book['分队时长统计'];totals=[row[-1].value for row in summary if row[0].value=='全队合计']
             self.assertEqual(totals,[0 if group_filter==other else 1])
-        self.s.set_collection_managers(self.sup,self.normal['id'],[],'撤权',[])
+        self.s.configure_business_owner(self.sup,bid,None,'撤权')
         with self.assertRaises(DomainError):self.s.submission_attachment(self.normal,sub,self.s.collections(self.student)[0]['submissions'][0]['attachments'][0]['attachment_id'])
 
-    def test_group_scope_request_approval_and_rename_identity(self):
-        gid=self.group();bid=self.b['干部']['business_id'];req=self.s.request_collection_scope(self.normal,[],'申请小组',[gid])['request_ids'][0]
-        self.s.decide_collection_scope(self.sup,req,True,1)
-        self.assertEqual(len(self.s.collection_management(self.normal)['group_grants']),1)
-        migrate(self.settings);self.assertEqual(self.rows("SELECT business_id FROM business WHERE name='干部及干事'")[0]['business_id'],bid)
-        self.assertFalse(self.rows("SELECT * FROM business WHERE name='干部'"))
+    def test_business_owner_auto_sees_collection_list(self):
+        bid=self.b['干部']['business_id'];self.s.configure_business_owner(self.sup,self.b['CONSULT']['business_id'],None,'释放咨询业务');self.s.configure_business_owner(self.sup,bid,self.normal['id'],'业务负责人')
+        self.s.set_event_member(self.sup,bid,self.sid,True,'2026-09-06','加入业务')
+        self.s.create_collection(self.normal,bid,'负责人征集','2026-09-07','2026-09-20',[self.sid],[{'title':'任务','min_minutes':30,'max_minutes':60}])
+        self.assertEqual(len(self.s.collections(self.normal)),1)
+        self.assertEqual(self.s.collections(self.other),[])
 
     def test_roster_conflicts_replay_password_and_hours_unchanged(self):
         book=Workbook();sheet=book.active;sheet.title='综运';sheet.append(['姓名','学号','学院']);sheet.append(['张三',self.sid,'新学院']);sheet.append(['新队员','0012345678901','测试学院']);sheet.append(['缺失',None,None])

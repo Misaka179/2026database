@@ -19,7 +19,7 @@ html[data-theme="dark"]{color-scheme:dark;--bg:#17221e;--surface:#1e2c25;--text:
 
 /* Keep query controls aligned independently of the shared help text. */
 .sidebar{overflow-y:auto}.nav-list{flex-shrink:0}.business-filter{margin-bottom:20px}
-.query-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));align-items:end}.query-form .field{min-width:0}.query-form .btn{margin:0;min-height:42px}.query-help{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px}.query-form input{min-width:0;max-width:100%}
+.query-form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:14px}.query-form .field{min-width:0}.query-form .btn{margin:0;min-height:42px}.query-help{grid-column:1/-1;margin:0;color:var(--muted);font-size:12px}.query-form input{min-width:0;max-width:100%}
 @media(max-width:600px){.query-form{grid-template-columns:minmax(0,1fr)}.query-form .btn{width:100%}}
 
 /* Collection publishing keeps its primary action visible independently of long rosters. */
@@ -27,7 +27,13 @@ html[data-theme="dark"]{color-scheme:dark;--bg:#17221e;--surface:#1e2c25;--text:
 .collection-dialog .dialog-header{flex:0 0 auto;padding:18px 22px 12px}
 .collection-dialog .dialog-body{display:flex;flex:1;min-height:0;padding:0}
 .collection-dialog #action-form{display:flex;flex-direction:column;min-height:0;width:100%}
-.collection-dialog .form-grid{overflow:auto;min-height:0;padding:8px 22px 20px;flex:1;align-content:start}
+.collection-dialog .form-grid{overflow:auto;min-height:0;padding:4px 18px 12px;flex:1;align-content:start;gap:10px 14px}
+.collection-dialog .field{gap:4px}
+.collection-dialog .field>label{font-size:12px}
+.collection-dialog .field small{font-size:11px;line-height:1.5}
+.collection-dialog .field input,.collection-dialog .field select,.collection-dialog .field textarea{min-height:36px;padding:7px 10px}
+.collection-dialog .collection-item-row{gap:8px;padding:8px;margin:8px 0}
+.collection-dialog .collection-item-row .field>label{font-size:11px}
 .collection-dialog .dialog-footer{padding:14px 22px;border-top:1px solid var(--line);background:var(--surface);flex-shrink:0}
 .collection-dialog #action-error{margin:6px 22px;flex-shrink:0}
 .collection-people{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px;display:grid;gap:9px;min-height:42px}

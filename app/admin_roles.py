@@ -1,4 +1,8 @@
-"""Grant existing volunteers a separate, auditable administrator identity."""
+"""Administrator accounts are created directly by a SUPER.
+
+There is intentionally no "promote a volunteer into an administrator" path:
+administrator accounts and volunteer accounts are independent identities.
+"""
 from .db import Database, one
 
 
@@ -56,50 +60,4 @@ class AdministratorService:
                          '时段管理员上调服务时长', message, 'schedules', schedule_id)
             self._notice(c, [('student', row['student_id'])], f'increase-fixed-hours:{log_id}',
                          'SERVICE', '服务时长已上调', message, 'schedules', schedule_id)
-            return result
-
-    def promote_student(self, actor, student_id, reason, slot_ids=()):
-        from .service import require, reason_text
-        reason = reason_text(reason)
-        with self.db.transaction(True) as c:
-            a = self.actor(c, actor, ('SUPER','LEAD'))
-            if a['_role']=='LEAD':
-                self.leader_membership_guard(c,a,student_id)
-                require(slot_ids,'请指定本范围内的负责时段',422)
-            student = one(c, 'SELECT * FROM student WHERE student_id=%s FOR UPDATE', (student_id,))
-            require(student, '队员不存在', 404)
-            require(student['status'] == 'ACTIVE', '只能将正常在队的队员设为普通管理员')
-            slots = []
-            for slot_id in sorted(set(slot_ids)):
-                slot = self.slot(c, slot_id)
-                if a['_role']=='LEAD':self.scope(a,slot)
-                require(slot.get('weekday') is not None and slot['status'] == 'ACTIVE', '请选择启用的固定时段', 422)
-                require(slot.get('business_code') not in ('GARDEN','PUBLICITY'),'请通过业务管理设置该业务管理员',422)
-                slots.append(slot)
-            admin = one(c, 'SELECT * FROM admin WHERE student_id=%s', (student_id,))
-            changed = False
-            if admin:
-                require(admin['role'] == 'NORMAL', '该队员已关联其他管理角色，不能覆盖')
-                admin_id = admin['admin_id']
-                if admin['status'] != 'ACTIVE':
-                    c.execute("UPDATE admin SET status='ACTIVE' WHERE admin_id=%s", (admin_id,))
-                    changed = True
-            else:
-                require(not one(c, 'SELECT 1 FROM admin WHERE account=%s', (student_id,)),
-                        '该学号已被其他管理员账号占用，请先核对管理员资料')
-                c.execute('''INSERT INTO admin(name,account,password_hash,role,student_id)
-                    VALUES(%s,%s,%s,'NORMAL',%s)''',
-                    (student['name'], student_id, student['password_hash'], student_id))
-                admin_id, changed = c.lastrowid, True
-            previous = [{'slot_id':s['slot_id'],'manager_admin_id':s['manager_admin_id']} for s in slots]
-            for slot in slots:
-                if slot['manager_admin_id'] != admin_id:
-                    c.execute('UPDATE service_slot SET manager_admin_id=%s WHERE slot_id=%s', (admin_id,slot['slot_id']))
-                    changed = True
-            result = {'admin_id':admin_id,'student_id':student_id,'account':student_id,
-                      'role':'NORMAL','slot_ids':[s['slot_id'] for s in slots],'replayed':not changed}
-            if changed:
-                self.sync_semesters(c)
-                self.audit(c, a['_id'], 'PROMOTE_STUDENT', 'admin', admin_id,
-                           {'admin_status':admin['status'] if admin else None,'slots':previous}, result, reason)
             return result

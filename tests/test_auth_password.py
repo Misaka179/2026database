@@ -132,45 +132,25 @@ class AuthPasswordTests(unittest.TestCase):
         self.assertFalse([n for n in self.service.inbox(self.seed["normal"])["items"]
                           if n["title"] == "账号密码已修改"])
 
-    def test_admin_change_password_syncs_linked_student_and_keeps_independent_admin(self):
-        self.service.promote_student(self.seed["super"], "20260001", "测试关联身份", [])
-        linked = self.rows("SELECT admin_id FROM admin WHERE student_id=%s", ("20260001",))
-        self.assertEqual(len(linked), 1)
-        linked_headers = self.headers("admin", "20260001")
-        linked_password = "Linked-Admin-2026!"
-        self.check(self.client.post(CHANGE, headers=linked_headers, json={
-            "current_password": OLD_PASSWORD, "new_password": linked_password}))
-        # The linked volunteer and administrator accounts share one password.
-        for kind in ("student", "admin"):
-            self.assertEqual(self.login(kind, "20260001").status_code, 401)
-            self.check(self.login(kind, "20260001", linked_password), 200)
-        # An administrator without a linked volunteer only changes its own row.
-        independent_headers = self.headers("admin", "admin1")
+    def test_admin_change_password_is_independent_from_volunteer(self):
+        self.service.create_admin(self.seed["super"], "独立管理员", "independent-admin", OLD_PASSWORD)
+        independent_headers = self.headers("admin", "independent-admin")
         self.check(self.client.post(CHANGE, headers=independent_headers, json={
             "current_password": OLD_PASSWORD, "new_password": "Independent-2026!"}))
-        self.check(self.login("admin", "admin1", "Independent-2026!"), 200)
-        self.assertEqual(self.login("admin", "admin1").status_code, 401)
-        self.check(self.login("admin", "super"), 200)
+        self.check(self.login("admin", "independent-admin", "Independent-2026!"), 200)
+        self.assertEqual(self.login("admin", "independent-admin").status_code, 401)
+        self.check(self.login("student", "20260001"), 200)
         logs = self.rows("SELECT * FROM operation_log WHERE operation_type='CHANGE_PASSWORD'")
-        self.assertEqual(len(logs), 2)
+        self.assertEqual(len(logs), 1)
         self.assertTrue(all(row["reason"] == "本人在线修改密码" for row in logs))
         self.assertNotIn("pbkdf2", json.dumps(logs, default=str))
 
-    def test_lead_administrator_shares_the_linked_volunteer_password(self):
-        student_hash = self.rows("SELECT password_hash FROM student WHERE student_id=%s",
-                                 ("20260002",))[0]["password_hash"]
-        with self.service.db.transaction(True) as c:
-            c.execute("INSERT INTO admin(name,account,password_hash,role,leader_student_id) "
-                      "VALUES(%s,%s,%s,'LEAD',%s)",
-                      ("美育负责人", "lead1", student_hash, "20260002"))
-        headers = self.headers("admin", "lead1")
-        new_password = "Lead-Password-2026!"
-        self.check(self.client.post(CHANGE, headers=headers, json={
-            "current_password": OLD_PASSWORD, "new_password": new_password}))
-        self.assertEqual(self.login("admin", "lead1").status_code, 401)
-        self.check(self.login("admin", "lead1", new_password), 200)
-        self.assertEqual(self.login("student", "20260002").status_code, 401)
-        self.check(self.login("student", "20260002", new_password), 200)
+    def test_admin_creation_has_no_volunteer_link_or_copied_password(self):
+        self.service.create_admin(self.seed["super"], "独立管理员", "independent-admin", "AdminOwnPass123!")
+        row = self.rows("SELECT student_id FROM admin WHERE account=%s",("independent-admin",))[0]
+        self.assertIsNone(row["student_id"])
+        self.assertEqual(self.login("admin", "independent-admin", OLD_PASSWORD).status_code, 401)
+        self.check(self.login("admin", "independent-admin", "AdminOwnPass123!"), 200)
 
     def test_disabled_admin_cannot_change_password_with_old_token(self):
         headers = self.headers("admin", "admin1")

@@ -52,14 +52,14 @@ class ScheduleReadDatabase:
             CREATE TABLE schedule (schedule_id INTEGER PRIMARY KEY, student_id TEXT,
                 slot_id INTEGER, schedule_date TEXT);
             CREATE TABLE service_slot (slot_id INTEGER PRIMARY KEY, team_name TEXT,
-                period_no INTEGER, start_time TEXT, end_time TEXT, location TEXT,
+                period_no INTEGER, start_time TEXT, end_time TEXT,
                 manager_admin_id INTEGER);
             CREATE TABLE attendance (schedule_id INTEGER, attendance_status TEXT, source TEXT, revision INTEGER);
             CREATE TABLE leave_application (schedule_id INTEGER, approve_status TEXT);
             INSERT INTO student VALUES ('s1', '张三'), ('s2', '李四');
             INSERT INTO service_slot VALUES
-                (1, '一分队', 1, '09:00', '11:00', '一楼', 1),
-                (2, '二分队', 2, '14:00', '16:00', '二楼', 2);
+                (1, '一分队', 1, '09:00', '11:00', 1),
+                (2, '二分队', 2, '14:00', '16:00', 2);
             INSERT INTO schedule VALUES (1, 's1', 1, '2030-01-01'),
                 (2, 's2', 2, '2030-01-01'), (3, 's2', 1, '2030-01-02');
         ''')

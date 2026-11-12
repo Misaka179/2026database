@@ -24,13 +24,14 @@ async function showCollectionFile(id,collectionId){
 }
 
 function openCollectionCreate(){
+ console.log('[DEBUG] openCollectionCreate called');
  if(!['SUPER','NORMAL'].includes(state.role))return;
  const businesses=(state.data.businesses||[]).filter(b=>b.status!=='ARCHIVED'&&(state.role==='SUPER'||b.can_collect)),events=businesses.filter(b=>b.kind==='EVENT');
- if(!events.length){notify(state.role==='NORMAL'?'请先申请征集管理范围并等待超管批准。':'请先创建非固定业务。',true);return;}
+ if(!events.length){notify(state.role==='NORMAL'?'请先由超级管理员将你设为业务总负责人。':'请先创建非固定业务。',true);return;}
  const selected=new Map();let visible=[],files=[],queryVersion=0,timer;
  const errorBox=id=>`<p class="notice error field full" id="${id}" hidden role="alert"></p>`;
  const fields=field('business_id','征集业务',{options:events.map(b=>[b.business_id,b.name])})+
-  field('group_id','征集小组',{options:[['','整项业务 / 未分组']],required:false})+field('title','征集标题',{maxLength:100})+
+  field('group_id','征集小组',{options:[['','整项业务 / 未分组']],required:false})+field('title','征集标题',{maxLength:100,full:true})+
   field('start_date','服务开始日期',{type:'date'})+field('end_date','服务结束日期',{type:'date'})+field('submission_deadline','申报截止日期',{type:'date',full:true,help:'截止当天仍可申报；过期后自动结束。可晚于服务结束日期，方便补报。'})+errorBox('collection-dates-error')+
   '<div class="field full"><label>工作事项</label><small>每项分别填写名称、最低时长和最高时长，时长单位为小时，以0.5小时递增，范围按每人每天计算。</small><div id="collection-items"></div><button type="button" class="btn small" id="collection-add-item">添加工作事项</button></div>'+errorBox('collection-items-error')+
   '<div class="field full"><label for="collection-files">工作说明附件（选填）</label><input id="collection-files" type="file" multiple accept=".pdf,.docx,.xlsx,.txt,.jpg,.jpeg,.png"><small>最多3个，每个不超过2MB。PDF、Word、Excel、TXT或JPG/PNG图片；附件不代替事项及分钟范围。</small><div id="collection-file-list"></div></div>'+errorBox('collection-files-error')+

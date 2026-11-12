@@ -97,9 +97,6 @@ def migrate(settings):
         c.execute("SHOW COLUMNS FROM attendance LIKE 'source'")
         if not c.fetchone():
             c.execute("ALTER TABLE attendance ADD source VARCHAR(24) NOT NULL DEFAULT 'MANUAL'")
-        # Preserve past decisions; outstanding one-off transfers can no longer execute.
-        c.execute("""UPDATE transfer_application SET final_status='CANCELLED'
-            WHERE old_slot_id IS NULL AND final_status='PENDING' AND first_status<>'REJECTED'""")
     from .corrections import migrate as migrate_corrections
     migrate_corrections(settings)
 
@@ -201,7 +198,7 @@ class SemesterService:
         current = {(r['student_id'],r['slot_id']) for r in all_rows(c, '''SELECT m.*
             FROM slot_member m JOIN student s ON s.student_id=m.student_id
             JOIN service_slot t ON t.slot_id=m.slot_id
-            WHERE s.status='ACTIVE' AND t.weekday IS NOT NULL AND t.status='ACTIVE' ''')}
+            WHERE s.status='ACTIVE' AND t.weekday IS NOT NULL ''')}
         open_rows = all_rows(c, 'SELECT * FROM semester_member WHERE semester_id=%s AND effective_until IS NULL', (term['semester_id'],))
         previous = {(r['student_id'],r['slot_id']) for r in open_rows}
         effective = datetime.combine(term['start_date'],time())
@@ -250,7 +247,7 @@ class SemesterService:
                 if member['weekday'] != day['effective_weekday'] or begins < member['effective_from'] or (member['effective_until'] is not None and begins >= member['effective_until']):
                     continue
                 if member['manager_status'] != 'ACTIVE' or member['need_num'] is None or counts.get(member['slot_id'],0) > member['need_num']:
-                    issues.add(f"{member['team_name']}：负责人或容量待完善；已有固定队员照常排班计时")
+                    issues.add(f"{member['team_name']}：负责人或建议人数待完善；已有固定队员照常排班计时")
                 desired[(member['student_id'], member['slot_id'], day['service_date'])] = member
         existing = all_rows(c, '''SELECT s.*,t.start_time,t.end_time FROM schedule s JOIN service_slot t ON t.slot_id=s.slot_id
             WHERE s.semester_id=%s OR (s.schedule_date BETWEEN %s AND %s)''',

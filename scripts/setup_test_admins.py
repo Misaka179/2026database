@@ -16,7 +16,7 @@ def provision(service, actor, accounts):
     prepared = [(item, hash_password(item['password'])) for item in accounts]
     with service.db.transaction(True) as c:
         admin = service.actor(c, actor, ('SUPER',))
-        slots = all_rows(c, "SELECT * FROM service_slot WHERE business_id=(SELECT business_id FROM business WHERE code='CONSULT') AND weekday IS NOT NULL AND status='ACTIVE' ORDER BY weekday,period_no")
+        slots = all_rows(c, "SELECT * FROM service_slot WHERE business_id=(SELECT business_id FROM business WHERE code='CONSULT') AND weekday IS NOT NULL ORDER BY weekday,period_no")
         require(len(slots)==35, '必须先完成 35 个固定时段初始化')
         expected = {s['slot_id']:s for s in slots}
         require(len(accounts)==35 and {a['slot_id'] for a in accounts}==set(expected), '测试账号清单与固定时段不匹配')
@@ -43,7 +43,7 @@ def provision(service, actor, accounts):
                 c.execute('UPDATE service_slot SET manager_admin_id=%s WHERE slot_id=%s',(manager,slot['slot_id']))
                 service.audit(c,admin['_id'],'CONFIGURE_SLOT','service_slot',slot['slot_id'],
                               {'manager_admin_id':None,'need_num':slot['need_num']},
-                              {'manager_admin_id':manager,'need_num':slot['need_num']},'配置测试管理员，保留原人数上限')
+                              {'manager_admin_id':manager,'need_num':slot['need_num']},'配置测试管理员，保留原建议人数')
                 result['assigned'] += 1
             elif slot['manager_admin_id'] != manager:
                 result['preserved'] += 1
@@ -60,7 +60,7 @@ def main():
     with service.db.transaction() as c:
         admin=one(c,"SELECT admin_id FROM admin WHERE account=%s AND role='SUPER' AND status='ACTIVE'",(args.super_account,))
         require(admin,'请指定有效超级管理员账号')
-        slots=all_rows(c,"SELECT slot_id,team_name,weekday,period_no FROM service_slot WHERE business_id=(SELECT business_id FROM business WHERE code='CONSULT') AND weekday IS NOT NULL AND status='ACTIVE' ORDER BY weekday,period_no")
+        slots=all_rows(c,"SELECT slot_id,team_name,weekday,period_no FROM service_slot WHERE business_id=(SELECT business_id FROM business WHERE code='CONSULT') AND weekday IS NOT NULL ORDER BY weekday,period_no")
     if args.output.exists():
         manifest=json.loads(args.output.read_text(encoding='utf-8'))
         require(manifest['database']==service.db.settings['database'],'清单数据库不匹配')
@@ -73,7 +73,7 @@ def main():
         args.output.write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf-8')
     result=provision(service,{'kind':'admin','id':admin['admin_id']},manifest['accounts'])
     lines=['# 固定时段测试管理员','', '登录工作台时选择“管理员”。各账号只负责对应时段，密码各不相同。',
-           '清单包含测试密码，请仅在本地项目中使用。原人数上限、队员归属、服务时长与信用分保持不变。','',
+           '清单包含测试密码，请仅在本地项目中使用。原建议人数、队员归属、服务时长与信用分保持不变。','',
            '| 时段 | 管理员账号 | 测试密码 |','|---|---|---|']
     lines.extend(f"| {a['team_name']} | `{a['account']}` | `{a['password']}` |" for a in manifest['accounts'])
     args.output.with_suffix('.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')

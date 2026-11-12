@@ -96,8 +96,8 @@ def initialize_database(settings, database='volunteer_core', demo=True, reset=Fa
             c.execute('INSERT INTO student(student_id,name,college,phone,password_hash) VALUES(%s,%s,%s,%s,%s)',(sid,name,'示例学院','',hashed))
         slots=[]
         for team,start,end,manager in [('一分队','10:00','12:00',admins[1]),('二分队','14:00','16:00',admins[2])]:
-            c.execute('''INSERT INTO service_slot(team_name,period_no,start_time,end_time,location,
-                need_num,service_minutes,manager_admin_id) VALUES(%s,1,%s,%s,'图书馆',2,120,%s)''',(team,start,end,manager))
+            c.execute('''INSERT INTO service_slot(team_name,period_no,start_time,end_time,
+                need_num,service_minutes,manager_admin_id) VALUES(%s,1,%s,%s,2,120,%s)''',(team,start,end,manager))
             slots.append(c.lastrowid)
         for kind,score in [('LATE',2),('ABSENT',3)]:
             c.execute('INSERT INTO credit_rule(violation_type,version,deduct_score,create_admin_id) VALUES(%s,1,%s,%s)',(kind,score,admins[0]))

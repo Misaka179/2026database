@@ -1,4 +1,4 @@
-"""Three roles, two-stage accounting, private claim files and inbox events."""
+"""Three roles, single-review accounting, private claim files and inbox events."""
 import base64
 from datetime import datetime
 import unittest
@@ -14,7 +14,8 @@ class GovernanceTests(unittest.TestCase):
 
     def grant(self):
         bid=self.b['干部']['business_id']
-        self.s.set_collection_managers(self.sup,self.normal['id'],[bid],'负责该业务征集')
+        self.s.configure_business_owner(self.sup,self.b['CONSULT']['business_id'],None,'释放咨询业务')
+        self.s.configure_business_owner(self.sup,bid,self.normal['id'],'负责该业务征集')
         self.s.set_event_member(self.sup,bid,self.sid,True,'2026-09-06','加入业务')
         return bid
 
@@ -27,43 +28,48 @@ class GovernanceTests(unittest.TestCase):
     def file(self,text='工作证明'):
         return {'filename':'工作说明.txt','file_base64':base64.b64encode(text.encode()).decode()}
 
-    def test_scope_application_review_revoke_and_participant_boundaries(self):
+    def test_owner_scope_and_participant_boundaries(self):
         bid=self.b['干部']['business_id'];otherbid=self.b['讲解队']['business_id']
-        req=self.s.request_collection_scope(self.normal,[bid],'负责活动')['request_ids'][0]
-        self.assertEqual(self.s.request_collection_scope(self.normal,[bid],'重复')['request_ids'],[req])
-        with self.assertRaises(DomainError):self.s.collection_participants(self.normal,bid)
-        self.s.decide_collection_scope(self.sup,req,True,1)
-        self.assertTrue(self.s.decide_collection_scope(self.sup,req,True,1)['replayed'])
+        self.s.configure_business_owner(self.sup,self.b['CONSULT']['business_id'],None,'释放咨询业务')
+        self.s.configure_business_owner(self.sup,bid,self.normal['id'],'负责活动')
+        with self.assertRaises(DomainError):self.s.collection_participants(self.other,bid)
         self.s.set_event_member(self.sup,bid,self.sid,True,'2026-09-06','加入')
         self.assertEqual(len(self.s.collection_participants(self.normal)),1)
         with self.assertRaises(DomainError):self.s.collection_participants(self.normal,otherbid)
         self.create()
         with self.assertRaises(DomainError):self.s.create_collection(self.normal,bid,'越权','2026-09-06','2026-09-07',['20260002'],[{'title':'事项','min_minutes':0,'max_minutes':60}])
-        self.s.set_collection_managers(self.sup,self.normal['id'],[],'结束授权')
+        self.s.configure_business_owner(self.sup,bid,None,'结束负责')
         self.assertEqual(self.s.collections(self.normal),[])
         with self.assertRaises(DomainError):self.create()
-        with self.assertRaises(DomainError):self.s.set_collection_managers(self.normal,self.other['id'],[bid],'越权')
 
-    def test_two_stage_minutes_corrections_and_retries(self):
+    def test_single_review_minutes_corrections_and_retries(self):
         self.grant();cid,item=self.create()
         sub=self.s.submit_hours(self.student,item,'2026-09-06',60,attachments=[self.file()])['submission_id']
-        with self.assertRaises(DomainError):self.s.decide_hours(self.sup,sub,True,1)
         with self.assertRaises(DomainError):self.s.decide_hours(self.other,sub,True,1)
-        self.assertEqual(self.s.decide_hours(self.normal,sub,True,1)['status'],'FIRST_APPROVED')
-        self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
-        self.assertTrue(self.s.decide_hours(self.normal,sub,True,1)['replayed'])
-        self.s.decide_hours(self.sup,sub,True,2)
+        self.assertEqual(self.s.decide_hours(self.normal,sub,True,1)['status'],'APPROVED')
         self.assertEqual(self.s.hours(self.student)['total_minutes'],60)
-        self.s.correct_hours_review(self.sup,sub,True,3,'核对实际工作',90)
-        self.assertTrue(self.s.correct_hours_review(self.sup,sub,True,3,'核对实际工作',90)['replayed'])
+        self.assertTrue(self.s.decide_hours(self.normal,sub,True,1)['replayed'])
+        with self.assertRaises(DomainError):self.s.decide_hours(self.sup,sub,True,2)
+        self.s.correct_hours_review(self.normal,sub,True,2,'核对实际工作',90)
+        self.assertTrue(self.s.correct_hours_review(self.normal,sub,True,2,'核对实际工作',90)['replayed'])
         self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
-        self.s.correct_hours_review(self.sup,sub,False,4,'材料存在问题')
+        self.s.correct_hours_review(self.sup,sub,False,3,'材料存在问题')
         self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
-        self.s.correct_hours_review(self.sup,sub,True,5,'核验无误',90)
+        self.s.correct_hours_review(self.sup,sub,True,4,'核验无误',90)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
         self.assertEqual(len(self.rows('SELECT * FROM service_record')),1)
         self.assertEqual(self.s.credit(self.student)['credit_score'],5)
-        self.assertEqual(len(self.rows('SELECT * FROM submission_review')),5)
+        self.assertEqual(len(self.rows('SELECT * FROM submission_review')),4)
+
+    def test_multi_day_submission_creates_one_record_per_day(self):
+        self.grant();cid,item=self.create()
+        self.now=datetime(2026,9,8,7)
+        submitted=self.s.submit_hours(self.student,item,'2026-09-06',60,
+                                       service_dates=['2026-09-06','2026-09-07','2026-09-06'])
+        self.assertEqual(len(submitted['submission_ids']),2)
+        for sid in submitted['submission_ids']:
+            self.s.decide_hours(self.normal,sid,True,1)
+        self.assertEqual(self.s.hours(self.student)['total_minutes'],120)
 
     def test_submission_files_privacy_replacement_and_history(self):
         self.grant();cid,item=self.create();f=self.file()
@@ -79,16 +85,15 @@ class GovernanceTests(unittest.TestCase):
         self.assertEqual(list(current['attachments']),[])
         self.assertEqual(len(self.rows('SELECT * FROM submission_attachment')),1)
         self.assertEqual(current['revision'],3)
-        with self.assertRaises(DomainError):self.s.correct_hours_review(self.normal,sub,True,3,'越权',90)
+        with self.assertRaises(DomainError):self.s.correct_hours_review(self.other,sub,True,3,'越权',90)
 
     def test_restoring_rejected_claim_after_another_event_reuses_its_slot(self):
         self.grant();cid,item=self.create()
         sub=self.s.submit_hours(self.student,item,'2026-09-06',60)['submission_id']
-        self.s.decide_hours(self.normal,sub,True,1)
-        original=self.s.decide_hours(self.sup,sub,True,2)['schedule_id']
-        self.s.correct_hours_review(self.sup,sub,False,3,'待补充材料')
+        original=self.s.decide_hours(self.normal,sub,True,1)['schedule_id']
+        self.s.correct_hours_review(self.sup,sub,False,2,'待补充材料')
         self.s.create_event(self.sup,'干部',self.sid,'资料整理','2026-09-06',30,'另一次独立工作','restore-collision-test')
-        restored=self.s.correct_hours_review(self.sup,sub,True,4,'材料已核实',60)
+        restored=self.s.correct_hours_review(self.sup,sub,True,3,'材料已核实',60)
         self.assertEqual(restored['schedule_id'],original)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
         self.assertEqual(len(self.rows('SELECT * FROM service_record')),2)
@@ -100,7 +105,7 @@ class GovernanceTests(unittest.TestCase):
         self.assertEqual(self.s.run_collection_deadlines()['closed'],1)
         self.assertEqual(self.s.run_collection_deadlines()['closed'],0)
         with self.assertRaises(DomainError):self.s.submit_hours(self.student,item,'2026-09-06',60)
-        self.s.decide_hours(self.normal,sub,True,1);self.s.decide_hours(self.sup,sub,True,2)
+        self.s.decide_hours(self.normal,sub,True,1)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],60)
         notices=self.rows("SELECT * FROM inbox_notice WHERE event_key=%s",(f'collection-closed:{cid}',))
         self.assertEqual(len(notices),3)

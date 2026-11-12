@@ -10,7 +10,7 @@ MySQL 5.7 的 `CHECK` 子句不会实际执行校验，因此本实现统一通�
 - 信用分降至 0 时，停用志愿者并取消其尚未开始的未来排班，保留历史记录。
 - 正常出勤和迟到都计该班次完整服务时长：第 3 时段为 180 分钟，其余时段为 120 分钟。迟到另外扣信用分。
 - 获批请假不计时、不扣分；缺勤不计时。
-- 换班可选择其他日期，必须检查目标班次人数和学生的时间冲突。初审通过后仍需超级管理员终审，最终通过时才执行排班变更。
+- 换班仅支持长期调整每周固定时段，必须检查原归属、目标重复和固定时间冲突；建议人数仅作提示，不作为通过门槛。审核一次即为最终结果，结果抄送超级管理员。
 - 一个服务班次指定一名负责的普通管理员；管理员角色、状态及操作权限由业务层检查。
 
 容量以“日期＋班次”为单位计算，服务班次定义本身可在不同日期复用。跨日期换班不等于跨午夜班次；当前班次要求同一天内结束时间晚于开始时间。
@@ -100,13 +100,11 @@ erDiagram
 | `period_no` | INT，触发器校验 > 0 | 时段序号 |
 | `start_time` | TIME | 开始时间 |
 | `end_time` | TIME，触发器校验 > start_time | 结束时间 |
-| `location` | VARCHAR(200) | 服务地点 |
-| `need_num` | INT，触发器校验 > 0 | 每日期该班次的容量 |
+| `need_num` | INT，触发器校验 > 0 | 建议人数；仅作排班规划参考，不限制名单导入 |
 | `service_minutes` | INT，触发器校验 > 0 | 班次标准认定时长（分钟） |
 | `manager_admin_id` | FK → admin.admin_id | 班次负责管理员 |
-| `status` | ENUM，默认 ACTIVE | ACTIVE 启用；DISABLED 停用 |
 
-班次的实际起止时间用于冲突判断，`service_minutes` 用于认定服务时长，两者含义不同。业务层按第 3 时段 180 分钟、其余 120 分钟设置；SQL 的正值约束本身不会推出这一规则。
+班次的实际起止时间用于冲突判断，`service_minutes` 用于认定服务时长，两者含义不同。业务层按第 3 时段 180 分钟、其余 120 分钟设置；SQL 的正值约束本身不会推出这一规则。时段没有启用/停用状态：不再需要的时段直接删除，不再保留“停用后从页面消失、又找不到恢复入口”的中间态。
 
 ### 4.4 `schedule`：排班
 
@@ -166,27 +164,22 @@ erDiagram
 
 `UNIQUE(schedule_id, active_marker)` 限制同一次排班最多有一条待审或已通过的请假。请假覆盖整次排班，不另外保存局部请假时间区间。
 
-### 4.8 `transfer_application`：跨日期换班申请
+### 4.8 `transfer_application`：固定班次长期换班申请
 
 | 字段 | 类型/约束 | 含义 |
 |---|---|---|
 | `transfer_id` | BIGINT UNSIGNED，PK、自增 | 换班申请编号 |
 | `student_id` | FK → student.student_id | 申请学生 |
-| `old_schedule_id` | 与 student_id 共同 FK → schedule(schedule_id, student_id) | 原排班 |
-| `new_slot_id` | FK → service_slot.slot_id | 目标班次 |
-| `new_date` | DATE | 目标服务日期，支持跨日 |
+| `old_slot_id` | FK → service_slot.slot_id，NOT NULL | 原固定班次 |
+| `new_slot_id` | FK → service_slot.slot_id | 目标固定班次 |
 | `reason` | VARCHAR(1000) | 申请原因 |
 | `apply_time` | DATETIME(6) | 申请时间 |
-| `first_admin_id` | 可空，FK → admin.admin_id | 初审人 |
-| `first_status` | ENUM，默认 PENDING | PENDING、APPROVED、REJECTED |
-| `first_time` | DATETIME(6)，可空 | 初审时间 |
-| `final_admin_id` | 可空，FK → admin.admin_id | 终审人 |
-| `final_status` | ENUM，默认 PENDING | PENDING、APPROVED、REJECTED、CANCELLED |
-| `final_time` | DATETIME(6)，可空 | 终审时间 |
-| `new_schedule_id` | 可空，与 student_id 共同 FK → schedule(schedule_id, student_id) | 成功换班后创建的新排班 |
-| `active_marker` | 生成列，可空 | 初审未拒绝且终审待审为 1，其余为 NULL |
+| `final_admin_id` | 可空，FK → admin.admin_id | 审核人（唯一结果） |
+| `final_status` | ENUM，默认 PENDING | PENDING、APPROVED、REJECTED、CANCELLED（唯一结果） |
+| `final_time` | DATETIME(6)，可空 | 审核时间（唯一结果） |
+| `active_marker` | 生成列，可空 | `final_status='PENDING'` 为 1，其余为 NULL |
 
-`UNIQUE(old_schedule_id, active_marker)` 防止同一原排班同时挂多份待处理换班申请。终审前目标名额未被预约，因此终审时必须重新检查容量和冲突，不能只依赖提交申请时的检查。初审、终审状态顺序以及终审人的角色由业务层校验。
+`UNIQUE(student_id, old_slot_id, active_marker)` 防止同一学生同一原班次同时挂多份待处理换班申请。审核前目标名额未被预约，因此审核通过时必须重新检查归属和冲突。换班只走一次审核，结果写 `final_*`，审批结果抄送超级管理员；单次日期换班已停用。
 
 ### 4.9 `withdrawal_application`：退队申请
 
@@ -273,8 +266,8 @@ erDiagram
 1. **排班容量与时间冲突。** 检查学生和班次有效状态，锁定相关学生、班次后检查同日名额和其他班次。时间段 A、B 在同一天且 `A.start < B.end AND A.end > B.start` 才冲突；首尾相接不冲突。
 2. **考勤、计时、扣分一致提交。** 一次考勤登记同时完成排班状态变更、应有时长记录、违规、实际扣分流水和学生分数更新；中途失败整体回滚。
 3. **信用分归零处理。** 停用学生并取消其尚未开始的未来排班，必要时终止这些排班上的待处理申请；保留已经发生的服务和扣分记录。
-4. **长期换时段。** 终审重新检查固定归属、目标容量和冲突，保存归属生效时间并更新未来安排；不允许单次跨日期换班。
-5. **审批权限及状态流转。** 外键只保证管理员存在，不保证角色、所负责班次、是否已停用，也不强制初审在终审之前。
+4. **长期换时段。** 一次审核通过时重新检查固定归属和冲突，原子更新归属并同步未来安排；建议人数仅展示和提示。不允许单次跨日期换班。
+5. **审批权限及状态流转。** 外键只保证管理员存在，不保证角色、所负责班次或是否已停用；业务层校验原时段负责人池、无审核人时的超管兜底，以及结果抄送。
 6. **规则调整与敏感修改留痕。** 修改规则采用新增版本；修改服务时长需权限和原因，并将修改前后值与业务更新一同写入事务。
 
 申请中的学生和排班一致性有复合外键保障。`credit_log(violation_id, rule_id)` 的复合外键进一步强制流水所用规则与违规规则一致。流水中的学生与违规所属学生一致，则由本期的考勤扣分事务构造并检查；独立的学生外键本身不保证这一点。
@@ -284,7 +277,7 @@ erDiagram
 - 每次排班只登记一条最终考勤；每条考勤最多对应一条时长记录、一个有效违规，撤销的违规历史保留。唯一约束防止重复。
 - 考勤不冗余学生编号；时长不冗余学生、排班和日期；违规不冗余学生。查询时通过外键 JOIN 获取，减少不一致数据。
 - 用整数分钟存时长，用班次标准时长和服务记录历史时长分别表达当前规则与实际认定结果。
-- 换班补充 `new_date`、`new_schedule_id`，完整表达跨日期目标和变更结果。
+- 固定班次换班用 `old_slot_id`、`new_slot_id` 表达原班次与目标班次，目标名额通过时重新检查；单次日期换班字段已删除。
 - 班次增加负责管理员，普通管理员的管理范围据此检查；本版本不另建权限表或管理员班次关联表。
 - 信用规则增加版本；违规保存标准扣分，信用流水记录实际扣分，清楚表达 0 分下限。
 - 登录增加密码哈希字段，审计快照使用 JSON。保留原规划的 13 张核心表，并通过迁移增加 4 张扩展表。
@@ -315,4 +308,20 @@ erDiagram
 
 ## 2026-09-27 管理员关联升级
 
-`admin.student_id` 为可空的 VARCHAR(32)，唯一外键引用 student.student_id。一个队员最多对应一个管理员身份，独立管理员为空；表数量仍为 17。关联管理员按队员当前密码验证，关联队员停用／退队后暂停权限。负责人仍使用 service_slot.manager_admin_id；授权不改变 slot_member。`PROMOTE_STUDENT` 审计记录保存负责时段变更和原因，密码不进入接口响应或审计。
+`admin.student_id` 为可空的 VARCHAR(32)，唯一外键引用 student.student_id。一个队员最多对应一个管理员身份，独立管理员为空；表数量仍为 17。关联管理员按队员当前密码验证，关联队员停用／退队后暂停权限。时段负责人使用 service_slot.manager_admin_id；授权不改变 slot_member。`PROMOTE_STUDENT` 审计记录保存负责时段变更和原因，密码不进入接口响应或审计。
+
+## 2026-11-10 业务负责人收敛（2.5.4）
+
+- 业务级负责人只保留 `business.total_manager_admin_id`（FK → admin.admin_id，可空）一个口径：业务负责人由超管通过 `PUT /businesses/{id}/owner` 指定，对整业务有管理权，但不覆盖 `service_slot.manager_admin_id`（时段负责人）与 `leader_scope.admin_id`（分队负责人）。
+- `business.manager_admin_id`、`business.manager_scope` 已删除：业务负责人只认 `business.total_manager_admin_id`，`PUT /businesses/{id}/manager` 保留兼容入口，等价于设置业务总负责人，不再改动任何时段的负责人。
+- `leader_scope.business_code` 与 `admin.leader_student_id` 已删除；分队负责人只按 `leader_scope.admin_id` 与 `leader_scope.business_id` 关联，不再维护队员学号副本。
+- 业务负责人可见：本业务全部时段/成员/考勤/时长（`scope()` 与各列表过滤均接受「时段负责人 or 该业务业务负责人」）；可改时段与建议人数、建小组、调成员、导入名单、发布/关闭时长征集、按本业务×星期任命分队负责人、指定小组征集负责人、审批时长上调/请假/换班。不可自封、改名、归档或跨业务操作。
+- 正式库 `volunteer_core` 已于 2026-11-11 执行删列（脚本 `.work/drop_redundant_fields.py`，删前列备份 `.work/backups/volunteer_core-before-business-20261111-175923-79e028.sql`）：`business` 表结构为 `business_id, code, name, kind, status, revision, total_manager_admin_id`；`leader_scope` 为 `scope_id, name, weekday, admin_id, assigned_at, business_id, active`；`admin` 无 `leader_student_id`。`.work/verify_fresh_database.py` 已用空库重建 + 迁移复核五张表均无被删列。
+
+## 2026-11-10 Excel 导入重构（2.5.5）
+
+- 两个导入入口（`POST /students/import` 固定业务、`POST /member-imports` 非固定业务/小组）共用一张批次表。`app.directory_schema.migrate` 以 `SHOW COLUMNS` 守卫幂等补列，老库与 17 表基线都不需要重建。
+- `member_import` 新增：`scope_kind VARCHAR(16) NULL`（BUSINESS/SLOT/GROUP）、`scope_id BIGINT UNSIGNED NULL`、`imported_count INT NOT NULL DEFAULT 0`、`skipped_count INT NOT NULL DEFAULT 0`、`removed_slots JSON NULL`（被本次导入退出的冲突时段，撤销时加回）、`reverted_at DATETIME NULL`（撤销后置位，禁止二次撤销）。
+- `member_import_row` 新增：`slot_id BIGINT UNSIGNED NULL`（固定业务行落点时段）、`created_account TINYINT NOT NULL DEFAULT 0`（撤销时只删本次新建、且没有其他归属的账号）。
+- 撤销信息不新增表：新增账号 = `created_account=1`；新增归属 = 行上的 `business_id/group_id/slot_id`；被移除的冲突时段 = `removed_slots`；审计写 `REVERT_MEMBER_IMPORT`。
+
