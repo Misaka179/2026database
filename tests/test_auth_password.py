@@ -160,14 +160,26 @@ class AuthPasswordTests(unittest.TestCase):
             "current_password": OLD_PASSWORD, "new_password": "Disabled-Admin-2026!"}), 403)
         self.assertIn("停用", denied["detail"])
 
-    def test_reset_request_accepts_without_enumeration_and_notifies_super(self):
-        valid = {"kind": "student", "account": "20260001", "name": "张三",
+    def test_reset_request_requires_exact_identity_and_notifies_super(self):
+        valid = {"kind": "student", "account": " 20260001 ", "name": " 张三 ",
                  "phone": "13800000000", "reason": "忘记密码"}
         accepted = {"status": "ACCEPTED"}
+        mismatch_cases = [
+            ({**valid, "name": "王五"}, "学号或姓名不正确，请检查后重试。"),
+            ({**valid, "name": "张"}, "学号或姓名不正确，请检查后重试。"),
+            ({**valid, "account": "20990000"}, "学号或姓名不正确，请检查后重试。"),
+            ({**valid, "kind": "admin", "account": "20260001"},
+             "管理员账号或姓名不正确，请检查后重试。"),
+        ]
+        for body, detail in mismatch_cases:
+            with self.subTest(body=body):
+                response = self.client.post(RESET_REQUEST, json=body)
+                self.assertEqual(response.status_code, 422, response.text)
+                self.assertEqual(response.json()["detail"], detail)
+        self.assertEqual([row for row in self.rows("SELECT * FROM inbox_notice")
+                          if row["event_key"].startswith("password-reset:")], [])
+
         self.assertEqual(self.check(self.client.post(RESET_REQUEST, json=valid)), accepted)
-        # Mismatched name, unknown account and unknown kind all look identical to a caller.
-        self.assertEqual(self.check(self.client.post(RESET_REQUEST, json={**valid, "name": "王五"})), accepted)
-        self.assertEqual(self.check(self.client.post(RESET_REQUEST, json={**valid, "account": "20990000"})), accepted)
         notices = [row for row in self.rows("SELECT * FROM inbox_notice")
                    if row["event_key"].startswith("password-reset:")]
         self.assertEqual(len(notices), 1)
@@ -185,9 +197,13 @@ class AuthPasswordTests(unittest.TestCase):
         self.check(self.client.post(RESET_REQUEST, json=valid))
         self.assertEqual(len([row for row in self.rows("SELECT * FROM inbox_notice")
                               if row["event_key"].startswith("password-reset:")]), 1)
-        # An administrator account can request a reset too.
-        self.check(self.client.post(RESET_REQUEST, json={
-            "kind": "admin", "account": "super", "name": "超级管理员"}))
+        # An administrator account can request a reset too, but its account and
+        # name must also be an exact same-record match.
+        admin_valid = {"kind": "admin", "account": "super", "name": "超级管理员"}
+        self.check(self.client.post(RESET_REQUEST, json=admin_valid))
+        bad_admin = self.client.post(RESET_REQUEST, json={**admin_valid, "name": "管理员"})
+        self.assertEqual(bad_admin.status_code, 422)
+        self.assertEqual(bad_admin.json()["detail"], "管理员账号或姓名不正确，请检查后重试。")
         keys = [row["event_key"] for row in self.rows("SELECT * FROM inbox_notice")
                 if row["event_key"].startswith("password-reset:")]
         self.assertEqual(sorted(keys), ["password-reset:admin:super:2030-01-01",

@@ -169,16 +169,6 @@
       return;
     }
 
-    var authTab = event.target.closest('[data-auth-tab]');
-    if (authTab) {
-      var target = authTab.getAttribute('data-target');
-      if (target) {
-        window.location.hash = target;
-      }
-      syncAuth();
-      return;
-    }
-
     var reveal = event.target.closest('[data-reveal]');
     if (reveal) {
       var input = document.getElementById(reveal.getAttribute('data-reveal'));
@@ -230,26 +220,30 @@
     document.body.style.overflow = '';
   }
 
-  /* 密码页：用地址栏 hash 做“路由”（#reset 忘记密码 / #change 修改密码） */
-  function syncAuth() {
-    var tabs = document.querySelectorAll('[data-auth-tab]');
-    if (!tabs.length) {
+  /* 旧 #change 链接只给出迁移提示；改密入口已收回工作台弹窗。 */
+  function normalizeLegacyPasswordRoute() {
+    if (window.location.hash !== '#change') {
       return;
     }
-    var route = window.location.hash === '#change' ? 'change' : 'reset';
-    for (var i = 0; i < tabs.length; i++) {
-      var tab = tabs[i];
-      var selected = tab.getAttribute('data-auth-tab') === route;
-      tab.setAttribute('aria-selected', String(selected));
-      var panel = document.getElementById(tab.getAttribute('aria-controls'));
-      if (panel) {
-        panel.hidden = !selected;
-      }
+    var notice = document.getElementById('legacy-change-notice');
+    if (notice) {
+      notice.hidden = false;
+    }
+    try {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search + '#reset');
+    } catch (error) {
+      window.location.hash = '#reset';
     }
   }
 
-  syncAuth();
-  window.addEventListener('hashchange', syncAuth);
+  normalizeLegacyPasswordRoute();
+
+  /* 静态稿不连接接口，避免表单提交导致页面刷新。 */
+  document.addEventListener('submit', function (event) {
+    if (event.target && event.target.classList.contains('auth-form')) {
+      event.preventDefault();
+    }
+  });
 
   document.addEventListener('keydown', function (event) {
     if (event.key !== 'Escape') {

@@ -265,10 +265,14 @@ class Service(LeaderService, BusinessService, SemesterService, CorrectionService
         table,key=('student','student_id') if kind=='student' else ('admin','account')
         with self.db.transaction() as c:
             row=one(c,f'SELECT * FROM {table} WHERE {key}=%s',(account,))
-        # The same "accepted" answer is returned for unknown or mismatched accounts,
-        # so the public endpoint cannot be used to enumerate accounts.
+        # The submitted identity must match one account record exactly.  Do this
+        # check before creating an inbox notice so an invalid request cannot be
+        # used to submit a reset or leave a misleading administrative task.
         if not row or row['name'].strip()!=name:
-            return {'status':'ACCEPTED'}
+            message = ('学号或姓名不正确，请检查后重试。'
+                       if kind == 'student' else
+                       '管理员账号或姓名不正确，请检查后重试。')
+            require(False, message, 422)
         now=self.clock()
         label='学生' if kind=='student' else '管理员'
         message=(f'账号类型：{label}（{kind}）；账号：{account}；姓名：{row["name"]}；'

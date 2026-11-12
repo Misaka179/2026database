@@ -275,9 +275,9 @@
       <p class="eyebrow">图书馆志愿服务管理系统 · 界面重设计</p>
       <h1>设计规范 2.5.0 · 静态预览</h1>
       <p>
-        这是「馆藏 · 纸墨」方向的静态预览：原生 HTML/CSS，零外部依赖，使用系统中文与假数据，
-        <strong>不连接正式系统、不修改任何产品代码</strong>。登录页按墨绿参照稿重做，其余工作台页面保持既有设计；
-        登录与密码页已按 1366×768 笔记本高度压缩，实测一屏放下、无需下滑。请重点看配色、排版层级、表格密度与移动端形态。
+        这是“馆藏 · 纸墨”方向的静态预览：原生 HTML/CSS，零外部依赖，使用系统中文与假数据，
+        <strong>不连接正式系统、不修改任何产品代码</strong>。认证区采用 1:1 深绿封面与暖纸白身份扉页，
+        保留圆环和口号并移除功能宣传；其余工作台页面保持既有业务预览。请重点看构图、排版层级、表格密度与移动端形态。
       </p>
     </div>
     <button class="theme-button" type="button" data-theme-toggle>
@@ -298,19 +298,19 @@
     <a class="preview-card" href="login.html">
       <div class="mini" aria-hidden="true">
         <div class="mini-row" style="height:100%">
-          <div class="mini-box" style="flex:1.1;border:0;background:linear-gradient(135deg,#3a6b57,#1b3f33)"></div>
-          <div class="mini-box" style="flex:0.9;padding:10px;background:var(--auth-beige,#edf4ec)">
+          <div class="mini-box" style="flex:1.33;border:0;border-radius:0;background:#173f34;position:relative"></div>
+          <div class="mini-box" style="flex:1;padding:10px;border-radius:0;background:#f4f1e8">
             <div class="mini-box line" style="width:55%"></div>
             <div class="mini-box line" style="width:100%;margin-top:8px"></div>
             <div class="mini-box line" style="width:100%;margin-top:8px"></div>
-            <div class="mini-box" style="height:16px;margin-top:12px;border:0;background:linear-gradient(135deg,#3f7359,#2d5b4b);border-radius:4px"></div>
+            <div class="mini-box" style="height:16px;margin-top:12px;border:0;background:#173f34;border-radius:3px"></div>
           </div>
         </div>
       </div>
       <div class="card-body">
-        <h3>登录页（v2）</h3>
-        <p>墨绿主视觉 + 浅绿色表单区；左栏 4 条功能纵向 4 行（图标 + 标题 + 说明），移动端收起主视觉只留品牌与表单。</p>
-        <div class="card-tags"><span>P0</span><span>参照稿配色</span><span>字号 +1px</span></div>
+        <h3>登录页 · 馆藏编辑风</h3>
+        <p>1:1 深绿品牌封面 + 暖纸白身份扉页；大圆环、四枚铜色半圆排扣、衬线口号和分段身份控件共同建立编辑排版层级。</p>
+        <div class="card-tags"><span>P0</span><span>1:1 构图</span><span>排扣核心</span></div>
         <div class="card-open"><span>打开登录页</span><span>→</span></div>
       </div>
     </a>
@@ -389,9 +389,9 @@
         </div>
       </div>
       <div class="card-body">
-        <h3>找回 / 修改密码</h3>
-        <p>一页两路由：<code>#reset</code> 忘记密码（提交重置申请）、<code>#change</code> 登录后修改密码；登录页与侧栏均有入口。</p>
-        <div class="card-tags"><span>P0a</span><span>路由 #reset / #change</span><span>账号安全</span></div>
+        <h3>找回密码</h3>
+        <p><code>#reset</code> 提交精确的账号与姓名核验，手机号和情况说明选填；旧 <code>#change</code> 链接提示登录后在工作台修改并规范化。</p>
+        <div class="card-tags"><span>P0a</span><span>精确核验</span><span>旧链接兼容</span></div>
         <div class="card-open"><span>打开密码页</span><span>→</span></div>
       </div>
     </a>

@@ -509,25 +509,20 @@ function openReadOnlyDialog(title,content,subtitle=''){
  dialog.innerHTML=`<header class="dialog-header"><div><h2 id="dialog-title">${esc(title)}</h2>${subtitle?`<p>${esc(subtitle)}</p>`:''}</div><button class="close-button" type="button" data-action="close">关闭</button></header><div class="dialog-body">${content}</div>`;
  dialog.showModal();
 }
-function openReadOnlyDialog(title,content){
- if(modalBusy||dialog.open)return;
- previousFocus=document.activeElement;modalSubmit=null;modalVersion++;
- dialog.classList.remove('collection-dialog');
- dialog.innerHTML=`<header class="dialog-header"><h2 id="dialog-title">${esc(title)}</h2><button class="close-button" type="button" data-action="close">关闭</button></header><div class="dialog-body">${content}</div>`;
- dialog.showModal();
-}
 function setModalBusy(busy){modalBusy=busy;dialog.querySelectorAll('[data-action="close"]').forEach(button=>button.disabled=busy);}
 function closeDialog(force=false){if(modalBusy&&!force)return;if(!dialog.open&&!modalSubmit)return;setModalBusy(false);modalVersion++;if(dialog.open)dialog.close();dialog.classList.remove('collection-dialog');dialog.innerHTML='';modalSubmit=null;const focus=previousFocus;previousFocus=null;focus?.focus?.();}
-function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength,minLength,icon}={}){
+function field(name,title,{type='text',value='',options,required=true,full=false,help='',min,max,step,placeholder='',maxLength,minLength,icon,autocomplete}={}){
  const attrs=`id="f-${name}" name="${name}" ${required?'required':''} ${min!==undefined?`min="${min}"`:''} ${max!==undefined?`max="${max}"`:''} ${step!==undefined?`step="${step}"`:''} ${maxLength?`maxlength="${maxLength}"`:''} ${minLength?`minlength="${minLength}"`:''}`;
- const inputElement=options?`<select ${attrs}>${options.map(([v,t])=>`<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(t)}</option>`).join('')}</select>`:type==='textarea'?`<textarea ${attrs} placeholder="${esc(placeholder)}">${esc(value)}</textarea>`:`<input ${attrs} type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${type==='password'?'autocomplete="new-password"':''}>`;
+ const autocompleteAttr=autocomplete?`autocomplete="${esc(autocomplete)}"`:type==='password'?'autocomplete="new-password"':'';
+ const inputElement=options?`<select ${attrs}>${options.map(([v,t])=>`<option value="${esc(v)}" ${String(v)===String(value)?'selected':''}>${esc(t)}</option>`).join('')}</select>`:type==='textarea'?`<textarea ${attrs} placeholder="${esc(placeholder)}">${esc(value)}</textarea>`:`<input ${attrs} type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${autocompleteAttr}>`;
  const content = icon ? `<div class="field-control">${uiIcon(icon, 'lead')}${inputElement}</div>` : inputElement;
  return `<div class="field ${full?'full':''}"><label for="f-${name}">${esc(title)}${!required?'<span class="required-label">选填</span>':''}</label>${content}${help?`<small class="field-help">${esc(help)}</small>`:''}</div>`;
 }
 const reasonField=()=>field('reason','原因说明',{type:'textarea',full:true,maxLength:500,placeholder:'请填写具体原因，便于审批和后续核对'});
 function changePasswordDialog(){
+ const identity=state.role==='STUDENT'?{kind:'student',account:state.me?.student_id||''}:{kind:'admin',account:state.me?.account||''};
  return openDialog('修改密码','',
-  field('current_password','当前密码',{type:'password',full:true,maxLength:128,placeholder:'请输入当前密码',icon:'lock'})+
+  field('current_password','当前密码',{type:'password',full:true,maxLength:128,placeholder:'请输入当前密码',icon:'lock',autocomplete:'current-password'})+
   field('new_password','新密码',{type:'password',full:true,maxLength:128,placeholder:'请输入新密码',icon:'lock'})+
   field('confirm_password','确认新密码',{type:'password',full:true,maxLength:128,placeholder:'请再次输入新密码',icon:'lock'}),
   async v=>{
@@ -535,6 +530,8 @@ function changePasswordDialog(){
    if(v.new_password===v.current_password)throw new Error('密码与原密码一致，请设置不同的新密码');
    if(!v.new_password||v.new_password.length<8||v.new_password.length>128)throw new Error('新密码长度必须为 8 至 128 个字符。');
    await send('/auth/password/change',{current_password:v.current_password,new_password:v.new_password});
+   try{sessionStorage.setItem('password_changed',JSON.stringify(identity));}catch{}
+   signOut(false);
    return {changed:true};
   }, '保存新密码');
 }
@@ -791,92 +788,77 @@ function loginView() {
   document.title = '登录 · 图书馆志愿服务';
   state.me = null;
   state.role = null;
+  let passwordHint = null;
+  try {
+    passwordHint = JSON.parse(sessionStorage.getItem('password_changed') || 'null');
+    if (passwordHint) sessionStorage.removeItem('password_changed');
+  } catch { passwordHint = null; }
+  const hintKind = passwordHint?.kind === 'student' ? 'student' : 'admin';
+  const hintAccount = passwordHint?.account ? esc(passwordHint.account) : '';
+  const hintNotice = passwordHint
+    ? `<div class="notice success auth-login-notice" role="status">${uiIcon('check-circle')}<span>密码已更新，请使用新密码登录。</span></div>`
+    : '';
   app.innerHTML = `<main class="auth-page" id="main">
     <section class="auth-hero" aria-label="系统简介">
-      <p class="auth-hero-top">四川大学图书馆志愿服务队管理系统</p>
+      <p class="auth-hero-top">四川大学图书馆 · 志愿服务管理系统</p>
       <div class="auth-hero-main">
         <div class="auth-brand">
           <span class="auth-brand-tile">${uiIcon('book')}</span>
-          <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
+          <span><strong>图书馆志愿服务</strong></span>
         </div>
-        <span class="auth-chip">志愿服务 · 一站式管理</span>
-        <h1 class="auth-headline">把每一次志愿服务，安排妥当。</h1>
-        <div class="auth-features">
-          <div class="auth-feature">
-            <span class="auth-feature-icon">${uiIcon('calendar')}</span>
-            <span><strong>排班与考勤</strong></span>
-          </div>
-          <div class="auth-feature">
-            <span class="auth-feature-icon">${uiIcon('check')}</span>
-            <span><strong>申请与审批</strong></span>
-          </div>
-          <div class="auth-feature">
-            <span class="auth-feature-icon">${uiIcon('clock')}</span>
-            <span><strong>时长与信用</strong></span>
-          </div>
-          <div class="auth-feature">
-            <span class="auth-feature-icon">${uiIcon('users')}</span>
-            <span><strong>分队与负责人</strong></span>
-          </div>
-        </div>
+        <h1 class="auth-headline"><span class="auth-headline-line">把每一次志愿服务，</span><br><span class="auth-headline-line">安排妥当。</span></h1>
+        <p class="auth-signature">四川大学图书馆志愿服务队</p>
       </div>
     </section>
+    <div class="auth-binding" aria-hidden="true">
+      <span></span><span></span><span></span><span></span>
+    </div>
     <section class="auth-panel">
-      <button class="icon-button auth-theme" type="button" data-action="theme" title="切换主题">
+      <button class="icon-button auth-theme" type="button" data-action="theme" title="切换主题" aria-label="切换主题">
         <span data-theme-icon>${uiIcon('moon')}</span>
       </button>
       <div class="auth-card">
-        <div class="auth-mobile-brand">
-          <span class="brand-mark">${uiIcon('book')}</span>
-          <span><strong>图书馆志愿服务</strong><small>四川大学图书馆志愿服务队</small></span>
-        </div>
-        <h2>欢迎回来</h2>
-        <p class="auth-sub">使用你的账号登录工作台。</p>
+        <p class="auth-eyebrow"><span>01</span></p>
+        <h2>登录系统</h2>
+        ${hintNotice}
         <form class="auth-form" id="login-form" novalidate>
-          <div class="auth-field">
-            <label for="login-kind">登录身份</label>
-            <div class="auth-control">
-              ${uiIcon('users', 'lead')}
-              <select id="login-kind" name="kind">
-                <option value="admin">管理员</option>
-                <option value="student">志愿者</option>
-              </select>
-              <span class="trail">${uiIcon('chevron-down')}</span>
+          <fieldset class="auth-identity">
+            <legend>身份</legend>
+            <div class="auth-segmented">
+              <label><input type="radio" name="kind" value="admin"${hintKind === 'admin' ? ' checked' : ''}><span>管理员</span></label>
+              <label><input type="radio" name="kind" value="student"${hintKind === 'student' ? ' checked' : ''}><span>志愿者</span></label>
             </div>
-          </div>
+          </fieldset>
           <div class="auth-field">
             <label for="login-account">账号</label>
             <div class="auth-control">
-              ${uiIcon('user', 'lead')}
               <input id="login-account" name="account" type="text" autocomplete="username"
-                     placeholder="请输入管理员账号或学号" required maxlength="64">
+                     value="${hintAccount}" placeholder="请输入账号" required maxlength="64">
             </div>
           </div>
           <div class="auth-field">
             <div class="auth-label-row">
               <label for="login-password">密码</label>
+              <a class="auth-link" href="/password#reset">忘记密码？</a>
             </div>
             <div class="auth-control">
-              ${uiIcon('lock', 'lead')}
               <input id="login-password" name="password" type="password"
-                     autocomplete="current-password"
+                     ${passwordHint ? 'autocomplete="new-password"' : 'autocomplete="current-password"'}
                      placeholder="请输入密码" required maxlength="128">
               <span class="trail">
                 <button class="auth-reveal" type="button" data-reveal="login-password" aria-label="显示密码">
-                  ${uiIcon('eye')}<span>显示</span>
+                  ${uiIcon('eye')}<span class="visually-hidden">显示</span>
                 </button>
               </span>
             </div>
           </div>
           <div id="login-error" class="notice error" role="alert" hidden></div>
-          <button class="auth-submit" type="submit">登录工作台 ${uiIcon('arrow-right')}</button>
+          <button class="auth-submit" type="submit"><span>登录</span>${uiIcon('arrow-right')}</button>
         </form>
-        <p class="auth-help auth-help--center">
-          <a class="auth-link" href="/password#reset">找回密码</a>
-        </p>
       </div>
     </section>
   </main>`;
+  if (passwordHint) $('#login-password')?.focus?.();
 }
 
 function buildShell() {
