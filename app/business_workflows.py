@@ -210,7 +210,13 @@ class BusinessWorkflows(SubmissionWorkflow):
                 for sub in r['submissions']:
                     sub['attachments']=all_rows(c,'SELECT attachment_id,filename,mime_type,size_bytes FROM submission_attachment WHERE submission_id=%s AND submission_revision=%s ORDER BY attachment_id',(sub['submission_id'],sub['attachment_revision']))
                     sub['reviews']=all_rows(c,'SELECT r.review_id,r.revision,r.stage,r.approved,r.service_minutes,r.reason,r.created_at,a.name AS admin_name FROM submission_review r JOIN admin a ON a.admin_id=r.admin_id WHERE submission_id=%s ORDER BY r.revision',(sub['submission_id'],))
-                    sub['can_review']=is_owner and sub['status']=='PENDING'
+                    first_review=next((review for review in sub['reviews']
+                                       if review['stage']=='FIRST' and review['revision']==sub['revision']),None)
+                    if a['_role']=='SUPER':
+                        sub['can_review']=sub['status']=='PENDING' and (
+                            not managers or bool(first_review and first_review['approved']))
+                    else:
+                        sub['can_review']=is_owner and sub['status']=='PENDING' and first_review is None
                     sub['can_correct']=is_owner and sub['status'] in ('APPROVED','REJECTED')
             return rows
 

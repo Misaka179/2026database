@@ -48,7 +48,7 @@ class ExportDatabaseTests(unittest.TestCase):
         self.fixture.setUp()
         self.term=self.fixture.term()
 
-    def test_only_super_can_export_and_invalid_term_is_rejected(self):
+    def test_only_super_or_leader_can_export_and_invalid_term_is_rejected(self):
         f=self.fixture
         for actor in (f.normal,f.student):
             with self.assertRaises(DomainError) as ex:export_hours(f.s,actor,self.term)

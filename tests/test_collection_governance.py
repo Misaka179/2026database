@@ -1,4 +1,4 @@
-"""Three roles, single-review accounting, private claim files and inbox events."""
+"""Three roles, two-stage accounting, private claim files and inbox events."""
 import base64
 from datetime import datetime
 import unittest
@@ -42,24 +42,29 @@ class GovernanceTests(unittest.TestCase):
         self.assertEqual(self.s.collections(self.normal),[])
         with self.assertRaises(DomainError):self.create()
 
-    def test_single_review_minutes_corrections_and_retries(self):
+    def test_two_stage_review_minutes_corrections_and_retries(self):
         self.grant();cid,item=self.create()
         sub=self.s.submit_hours(self.student,item,'2026-09-06',60,attachments=[self.file()])['submission_id']
         with self.assertRaises(DomainError):self.s.decide_hours(self.other,sub,True,1)
-        self.assertEqual(self.s.decide_hours(self.normal,sub,True,1)['status'],'APPROVED')
-        self.assertEqual(self.s.hours(self.student)['total_minutes'],60)
-        self.assertTrue(self.s.decide_hours(self.normal,sub,True,1)['replayed'])
-        with self.assertRaises(DomainError):self.s.decide_hours(self.sup,sub,True,2)
-        self.s.correct_hours_review(self.normal,sub,True,2,'核对实际工作',90)
-        self.assertTrue(self.s.correct_hours_review(self.normal,sub,True,2,'核对实际工作',90)['replayed'])
-        self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
-        self.s.correct_hours_review(self.sup,sub,False,3,'材料存在问题')
+        first=self.s.decide_hours(self.normal,sub,True,1)
+        self.assertEqual((first['status'],first['stage']),('PENDING','FIRST'))
         self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
-        self.s.correct_hours_review(self.sup,sub,True,4,'核验无误',90)
+        self.assertTrue(self.s.decide_hours(self.normal,sub,True,1)['replayed'])
+        final=self.s.decide_hours(self.sup,sub,True,2)
+        self.assertEqual((final['status'],final['stage']),('APPROVED','FINAL'))
+        self.assertEqual(self.s.hours(self.student)['total_minutes'],60)
+        self.assertTrue(self.s.decide_hours(self.sup,sub,True,2)['replayed'])
+        with self.assertRaises(DomainError):self.s.decide_hours(self.normal,sub,True,2)
+        self.s.correct_hours_review(self.normal,sub,True,3,'核对实际工作',90)
+        self.assertTrue(self.s.correct_hours_review(self.normal,sub,True,3,'核对实际工作',90)['replayed'])
+        self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
+        self.s.correct_hours_review(self.sup,sub,False,4,'材料存在问题')
+        self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
+        self.s.correct_hours_review(self.sup,sub,True,5,'核验无误',90)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
         self.assertEqual(len(self.rows('SELECT * FROM service_record')),1)
         self.assertEqual(self.s.credit(self.student)['credit_score'],5)
-        self.assertEqual(len(self.rows('SELECT * FROM submission_review')),4)
+        self.assertEqual(len(self.rows('SELECT * FROM submission_review')),5)
 
     def test_multi_day_submission_creates_one_record_per_day(self):
         self.grant();cid,item=self.create()
@@ -69,6 +74,7 @@ class GovernanceTests(unittest.TestCase):
         self.assertEqual(len(submitted['submission_ids']),2)
         for sid in submitted['submission_ids']:
             self.s.decide_hours(self.normal,sid,True,1)
+            self.s.decide_hours(self.sup,sid,True,2)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],120)
 
     def test_submission_files_privacy_replacement_and_history(self):
@@ -86,14 +92,23 @@ class GovernanceTests(unittest.TestCase):
         self.assertEqual(len(self.rows('SELECT * FROM submission_attachment')),1)
         self.assertEqual(current['revision'],3)
         with self.assertRaises(DomainError):self.s.correct_hours_review(self.other,sub,True,3,'越权',90)
+        owner_claim=next(r for r in self.s.collections(self.normal)[0]['submissions'] if r['submission_id']==sub)
+        self.assertTrue(owner_claim['can_review'])
+        self.assertFalse(next(r for r in self.s.collections(self.sup)[0]['submissions']
+                              if r['submission_id']==sub)['can_review'])
+        self.assertEqual(self.s.decide_hours(self.normal,sub,True,3)['status'],'PENDING')
+        self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
+        self.assertEqual(self.s.decide_hours(self.sup,sub,True,4)['status'],'APPROVED')
+        self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
 
     def test_restoring_rejected_claim_after_another_event_reuses_its_slot(self):
         self.grant();cid,item=self.create()
         sub=self.s.submit_hours(self.student,item,'2026-09-06',60)['submission_id']
-        original=self.s.decide_hours(self.normal,sub,True,1)['schedule_id']
-        self.s.correct_hours_review(self.sup,sub,False,2,'待补充材料')
+        self.s.decide_hours(self.normal,sub,True,1)
+        original=self.s.decide_hours(self.sup,sub,True,2)['schedule_id']
+        self.s.correct_hours_review(self.sup,sub,False,3,'待补充材料')
         self.s.create_event(self.sup,'干部',self.sid,'资料整理','2026-09-06',30,'另一次独立工作','restore-collision-test')
-        restored=self.s.correct_hours_review(self.sup,sub,True,3,'材料已核实',60)
+        restored=self.s.correct_hours_review(self.sup,sub,True,4,'材料已核实',60)
         self.assertEqual(restored['schedule_id'],original)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],90)
         self.assertEqual(len(self.rows('SELECT * FROM service_record')),2)
@@ -106,6 +121,8 @@ class GovernanceTests(unittest.TestCase):
         self.assertEqual(self.s.run_collection_deadlines()['closed'],0)
         with self.assertRaises(DomainError):self.s.submit_hours(self.student,item,'2026-09-06',60)
         self.s.decide_hours(self.normal,sub,True,1)
+        self.assertEqual(self.s.hours(self.student)['total_minutes'],0)
+        self.s.decide_hours(self.sup,sub,True,2)
         self.assertEqual(self.s.hours(self.student)['total_minutes'],60)
         notices=self.rows("SELECT * FROM inbox_notice WHERE event_key=%s",(f'collection-closed:{cid}',))
         self.assertEqual(len(notices),3)

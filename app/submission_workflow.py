@@ -1,4 +1,4 @@
-"""Single-stage hour claims with private files and auditable corrections."""
+"""Two-stage hour claims with private files and auditable corrections."""
 from .db import one,all_rows
 from .collection_support import CollectionSupport,decode_attachments
 
@@ -103,19 +103,53 @@ class SubmissionWorkflow(CollectionSupport):
         row=self._submission_row(c,submission_id)
         require(row,'申报不存在',404)
         self._collection_scope(c,a,row['business_id'],row.get('group_id'),row['collection_start_date'],row['collection_end_date'])
-        stage='REVIEW'
-        desired='APPROVED' if approved else 'REJECTED'
         previous=one(c,'SELECT * FROM submission_review WHERE submission_id=%s AND revision=%s',(submission_id,expected_revision+1))
-        if row['revision']==expected_revision+1 and previous and previous['stage']==stage and previous['admin_id']==a['_id'] and bool(previous['approved'])==approved:return {'replayed':True,'status':row['status']}
+        if (row['revision']==expected_revision+1 and previous
+                and previous['admin_id']==a['_id']
+                and bool(previous['approved'])==approved
+                and previous['stage'] in ('FIRST','FINAL','DIRECT','REVIEW')):
+            return {'replayed':True,'status':row['status']}
         require(row['revision']==expected_revision,'申报版本已变化，请刷新',409)
         require(row['status']=='PENDING','该申报已经处理，请刷新',409)
-        schedule_id=self._claim_ledger(c,row,approved,row['service_minutes'],a['_id'])
-        c.execute('UPDATE hour_submission SET status=%s,rejection_reason=%s,revision=revision+1,schedule_id=%s,final_admin_id=%s WHERE submission_id=%s',(desired,reason,schedule_id,a['_id'],submission_id))
-        c.execute('INSERT INTO submission_review(submission_id,revision,stage,admin_id,approved,service_minutes,reason,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)',(submission_id,expected_revision+1,stage,a['_id'],approved,row['service_minutes'],reason,self.clock()))
-        self.audit(c,a['_id'],'REVIEW_HOURS','hour_submission',submission_id,row,{'status':desired,'schedule_id':schedule_id},reason)
-        self._notice(c,[('student',row['student_id'])],f'claim-reviewed:{submission_id}:{expected_revision+1}','CLAIM','时长申报'+('通过' if approved else '打回'),reason or ('审核通过，已计入服务时长。' if approved else '审核打回。'),'collections',row['collection_id'])
-        self._notice(c,self._super_recipients(c),f'claim-report:{submission_id}:{expected_revision+1}','CLAIM','时长审核结果已抄送',f"{row['collection_title']}：学号 {row['student_id']} 的申报"+('已通过。' if approved else '已被打回。'),'collections',row['collection_id'])
-        return {'status':desired,'schedule_id':schedule_id}
+        first_review=one(c,"SELECT * FROM submission_review WHERE submission_id=%s AND revision=%s AND stage='FIRST'",
+                         (submission_id,row['revision']))
+        has_first=bool(first_review)
+        has_collection_owner=bool(self._collection_admins(
+            c,row['business_id'],row.get('group_id'),row['collection_start_date'],row['collection_end_date']))
+        if a['_role']=='NORMAL':
+            require(not has_first,'该申报已完成初审，等待超级管理员终审',409)
+            stage='FIRST'
+            final=not approved
+        else:
+            if has_first:
+                require(bool(first_review['approved']),'初审未通过，不能进行终审',409)
+                stage='FINAL'
+            else:
+                require(not has_collection_owner,'该业务需要业务负责人先完成初审',409)
+                stage='DIRECT'
+            final=True
+
+        desired='APPROVED' if approved and final else 'REJECTED' if not approved else 'PENDING'
+        schedule_id=self._claim_ledger(c,row,approved,row['service_minutes'],a['_id']) if final else row.get('schedule_id')
+        c.execute('UPDATE hour_submission SET status=%s,rejection_reason=%s,revision=revision+1,schedule_id=%s,final_admin_id=%s WHERE submission_id=%s',
+                  (desired,reason,schedule_id,a['_id'] if final else None,submission_id))
+        c.execute('INSERT INTO submission_review(submission_id,revision,stage,admin_id,approved,service_minutes,reason,created_at) VALUES(%s,%s,%s,%s,%s,%s,%s,%s)',
+                  (submission_id,expected_revision+1,stage,a['_id'],approved,row['service_minutes'],reason,self.clock()))
+        operation={'FIRST':'REVIEW_HOURS_FIRST','FINAL':'REVIEW_HOURS_FINAL',
+                   'DIRECT':'REVIEW_HOURS_DIRECT'}.get(stage,'REVIEW_HOURS')
+        self.audit(c,a['_id'],operation,'hour_submission',submission_id,row,{'status':desired,'stage':stage,'schedule_id':schedule_id},reason)
+        if stage=='FIRST' and approved:
+            student_message='初审通过，等待超级管理员终审。'
+            copy_message=f"{row['collection_title']}：学号 {row['student_id']} 的申报已初审通过，等待超级管理员终审。"
+        else:
+            student_message=reason or ('审核通过，已计入服务时长。' if approved else '审核打回。')
+            copy_message=f"{row['collection_title']}：学号 {row['student_id']} 的申报"+('已通过并计入时长。' if approved else '已被打回。')
+        self._notice(c,[('student',row['student_id'])],f'claim-reviewed:{submission_id}:{expected_revision+1}','CLAIM',
+                     '时长申报初审结果' if stage=='FIRST' else '时长申报审核结果',student_message,'collections',row['collection_id'])
+        self._notice(c,self._super_recipients(c),f'claim-report:{submission_id}:{expected_revision+1}','CLAIM',
+                     '时长申报初审待终审' if stage=='FIRST' and approved else '时长审核结果已抄送',
+                     copy_message,'collections',row['collection_id'])
+        return {'status':desired,'stage':stage,'schedule_id':schedule_id}
 
     def approve_hours_batch(self,actor,collection_id,items,reason=''):
         from .service import require,DomainError
