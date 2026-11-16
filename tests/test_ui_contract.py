@@ -145,6 +145,14 @@ assert.equal(run('governanceAction(undefined)'),false);
 assert.doesNotThrow(()=>run('action(undefined)'));
 ''')
 
+    def test_business_excel_import_passes_scope_to_import_dialog(self):
+        self.js(r'''
+run("openImportDialog=(kind,id)=>{globalThis.importScope=[kind,id]}");
+assert.doesNotThrow(()=>run("action('excel-import','7','BUSINESS')"));
+assert.equal(run('importScope[0]'),'BUSINESS');
+assert.equal(run('importScope[1]'),7);
+''')
+
     def test_fixed_membership_appears_and_opens_transfer_without_dated_schedule(self):
         self.js(r'''
 run(`state.role='STUDENT';state.me={student_id:'001',name:'甲',status:'ACTIVE'};
