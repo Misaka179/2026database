@@ -55,7 +55,7 @@ async function groupsPage(){
  }catch(e){if(seq===state.sequence)$('#groups-result').textContent=e.message;}
 }
 async function showGroupMembers(id){const seq=state.sequence,session=state.sessionVersion;try{const rows=await request(`/business-groups/${id}/members`);if(seq!==state.sequence||session!==state.sessionVersion||state.page!=='groups')return;const g=rowsOf(state.data.groups,'group_id',id);if(!g)return;openReadOnlyDialog(g.name,table(['姓名','学号','生效日期','结束日期'],rows.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.student_id)}</td><td>${esc(r.effective_from)}</td><td>${esc(r.effective_until||'持续有效')}</td></tr>`),'暂无小组成员','该小组当前没有成员。'));}catch(e){if(seq===state.sequence&&session===state.sessionVersion)notify(e.message,true);}}
-function directoryAction(name,id){
+function directoryAction(name,id,kind){
  if(name==='nav-toggle'){toggleNavGroup(id);return true;}
  if(name==='business-create'){openBusinessCreate();return true;}
  if(name==='business-archive'||name==='business-restore'){openArchive(id,name==='business-restore');return true;}
